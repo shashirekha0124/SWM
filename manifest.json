@@ -1,0 +1,22 @@
+{
+  "name": "SWM Driver App",
+  "short_name": "SWM Driver",
+  "description": "Ward Routes & Live Tracking for SWM vehicles",
+  "start_url": "https://shashirekha0124.github.io/driver-app/index.html",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#065f46",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
