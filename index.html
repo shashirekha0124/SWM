@@ -8,26 +8,117 @@
   <link rel="manifest" href="manifest.json">
   <script src="https://js.arcgis.com/4.29/"></script>
   <style>
-    html, body { height: 100%; width: 100%; margin: 0; }
-    #app { height: 100%; display: grid; grid-template-rows: auto auto 1fr; }
-    .topbar {
-      display: grid; gap: .5rem; grid-template-columns: 1fr auto;
-      padding: .5rem .75rem; background:#111827; color:#fff; align-items:center;
-    }
-    .topbar h1 { font-size: 1rem; margin: 0; font-weight:600; }
-    .controls { display:flex; gap:.5rem; align-items:center; }
-    select, button {
-      font-size: .95rem; padding: .4rem .6rem; border-radius: .5rem; border: 1px solid #d1d5db;
-    }
-    #statusBar {
-      font-family: system-ui, sans-serif;
-      padding: .5rem .75rem; font-size: .95rem;
-      background: #f9fafb; border-bottom: 1px solid #e5e7eb;
-    }
-    #statusBar.ok { color:#065f46; background:#ecfdf5; border-color:#a7f3d0; }
-    #statusBar.warn { color:#92400e; background:#fffbeb; border-color:#fcd34d; }
-    #statusBar.alert { color:#991b1b; background:#fef2f2; border-color:#fecaca; }
-    #viewDiv { height: 100%; width: 100%; }
+    html, body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent; /* remove tap flash on Android */
+}
+
+#app {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  background: #fff;
+}
+
+/* ---- Top Bar ---- */
+.topbar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: #111827;
+  color: #fff;
+  align-items: center;
+}
+
+.topbar h1 {
+  font-size: 1rem;
+  margin: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+select, button {
+  font-size: 0.95rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #111827;
+}
+
+button {
+  background: #059669;
+  color: #fff;
+  border: none;
+  font-weight: 500;
+}
+
+button:active {
+  background: #047857;
+}
+
+/* ---- Status Bar ---- */
+#statusBar {
+  padding: 0.6rem 1rem;
+  font-size: 0.95rem;
+  border-bottom: 1px solid #e5e7eb;
+  position: sticky;
+  top: 0; /* stays visible if page scrolls */
+  z-index: 5;
+}
+
+#statusBar.ok {
+  color: #065f46;
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+}
+#statusBar.warn {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fcd34d;
+}
+#statusBar.alert {
+  color: #991b1b;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+/* ---- Map Container ---- */
+#viewDiv {
+  height: 100%;
+  width: 100%;
+}
+
+/* ---- Responsive Tweaks ---- */
+@media (max-width: 600px) {
+  .topbar {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+  .controls {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  select, button {
+    flex: 1; /* buttons stretch nicely on mobile */
+  }
+  #statusBar {
+    font-size: 0.85rem;
+    padding: 0.5rem 0.75rem;
+  }
+}
   </style>
 </head>
 <body>
@@ -502,6 +593,7 @@
   </script>
 </body>
 </html>
+
 
 
 
