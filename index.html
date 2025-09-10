@@ -2,126 +2,159 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>SWM Driver App </title>
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <title>SWM Driver App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/light/main.css">
-  <link rel="manifest" href="manifest.json">
   <script src="https://js.arcgis.com/4.29/"></script>
   <style>
-    html, body { height: 100%; width: 100%; margin: 0; }
-    #app { height: 100%; display: grid; grid-template-rows: auto auto 1fr; }
-    .topbar {
-      display: grid; gap: .5rem; grid-template-columns: 1fr auto;
-      padding: .5rem .75rem; background:#111827; color:#fff; align-items:center;
+    html, body { height: 100%; width: 100%; margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; overflow: hidden; }
+    #viewDiv { height: 100vh; width: 100vw; }
+
+    /* Floating Panel (top center) */
+    .floating-panel {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255,255,255,0.98);
+      border-radius: 12px;
+      padding: .5rem .75rem;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+      display: flex;
+      gap: .5rem;
+      align-items: center;
+      z-index: 999;
+      min-width: 260px;
     }
-    .topbar h1 { font-size: 1rem; margin: 0; font-weight:600; }
-    .controls { display:flex; gap:.5rem; align-items:center; }
-    select, button {
-      font-size: .95rem; padding: .4rem .6rem; border-radius: .5rem; border: 1px solid #d1d5db;
+    .floating-panel label { font-size: .85rem; color: #374151; margin-right: .25rem; }
+    .floating-panel select, .floating-panel input {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: .92rem;
+      padding: .35rem .5rem;
+      min-width: 120px;
     }
+
+    /* Recenter button */
+    .map-button {
+      position: absolute;
+      bottom: 88px;
+      right: 12px;
+      background: #fff;
+      border: none;
+      border-radius: 50%;
+      width: 52px;
+      height: 52px;
+      box-shadow: 0 6px 16px rgba(2,6,23,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 999;
+      font-size: 18px;
+    }
+    .map-button:active { transform: translateY(1px); }
+
+    /* Bottom status bar */
     #statusBar {
-      font-family: system-ui, sans-serif;
-      padding: .5rem .75rem; font-size: .95rem;
-      background: #f9fafb; border-bottom: 1px solid #e5e7eb;
+      position: absolute;
+      bottom: 0;
+      left: 0; right: 0;
+      padding: .75rem 1rem;
+      font-size: .95rem;
+      border-top: 1px solid #e5e7eb;
+      background: rgba(255,255,255,0.98);
+      box-shadow: 0 -6px 18px rgba(2,6,23,0.06);
+      z-index: 999;
+      text-align: center;
     }
     #statusBar.ok { color:#065f46; background:#ecfdf5; border-color:#a7f3d0; }
     #statusBar.warn { color:#92400e; background:#fffbeb; border-color:#fcd34d; }
     #statusBar.alert { color:#991b1b; background:#fef2f2; border-color:#fecaca; }
-    #viewDiv { height: 100%; width: 100%; }
+
+    /* small mobile tweaks */
+    @media (max-width: 420px) {
+      .floating-panel { min-width: 220px; padding: .4rem .5rem; gap: .4rem; }
+      .map-button { width: 48px; height: 48px; font-size: 16px; bottom: 76px; }
+    }
   </style>
 </head>
 <body>
-  <div id="app">
-    <div class="topbar">
-      <h1>SWM Driver – Ward Routes & Live Tracking</h1>
-      <div class="controls">
-        <label for="wardSelect" style="color:#d1d5db;">Ward:</label>
-        <select id="wardSelect" aria-label="Select Ward">
-    <option value="">-- Select Ward --</option>
-    <option value="Ward22-A">Ward 22-A</option>
-    <option value="Ward22-B">Ward 22-B</option>
-    <option value="Ward3">Ward 3</option>
-    <option value="Ward4">Ward 4</option>
-  </select>
+  <div id="viewDiv"></div>
 
-  <!-- Vehicle Number (auto-filled) -->
-  <label for="vehicleNumber">Vehicle Number:</label>
-  <input type="text" id="vehicleNumber" readonly>
-
-        <button id="recenterBtn" title="Recenter on vehicle">Recenter</button>
-      </div>
-    </div>
-    <div id="statusBar" class="ok">Status: ready</div>
-    <div id="viewDiv"></div>
+  <div class="floating-panel" aria-hidden="false">
+    <label for="wardSelect">Ward</label>
+    <select id="wardSelect" aria-label="Select ward">
+      <option value="">-- Select Ward --</option>
+      <option value="Ward22-A">Ward 22-A</option>
+      <option value="Ward22-B">Ward 22-B</option>
+      <option value="Ward3">Ward 3</option>
+      <option value="Ward4">Ward 4</option>
+    </select>
+    <input id="vehicleNumber" placeholder="Vehicle #" readonly />
   </div>
 
+  <button id="recenterBtn" class="map-button" title="Recenter">⤵</button>
+
+  <div id="statusBar" class="ok">Status: ready</div>
+
   <script>
-  const REFRESH_MS = 15000; // refresh every 15 seconds
+    const REFRESH_MS = 15000; // 15s
     require([
-      "esri/Map",
-      "esri/views/MapView",
-      "esri/geometry/Point",
-      "esri/geometry/Polygon",
-      "esri/geometry/Polyline",
-      "esri/Graphic",
-      "esri/geometry/geometryEngine"
+      "esri/Map", "esri/views/MapView",
+      "esri/geometry/Point", "esri/geometry/Polygon", "esri/geometry/Polyline",
+      "esri/Graphic", "esri/geometry/geometryEngine"
     ], function (Map, MapView, Point, Polygon, Polyline, Graphic, geometryEngine) {
 
-      // === CONFIG ===
-      const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=WTZZZ3VZYitKR1RNYjBNMmpwN2dUOTF4TDcxL01vV0RqRWhZVTl3VXg0Yz0kaXRtcyQxMC0wOS0yMDI1IDEyOjIzOjI1";
-      const ROUTE_BUFFER_METERS = 25; // allowable deviation from route
+      // --- CONFIG: set correct API URL / token here ---
+      const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=ODZUSGxkL0R1SU5CSEwzbmlkQmE4RzV1QTU4YkJyUi9SS25tK3RxcnNzQT0kaXRtcyQxMC0wOS0yMDI1IDE1OjE5OjAx";
+      const ROUTE_BUFFER_METERS = 25;
 
-      // === UI HANDLES ===
-      const statusBar  = document.getElementById("statusBar");
+      // UI handles
+      const statusBar = document.getElementById("statusBar");
       const recenterBtn = document.getElementById("recenterBtn");
+      const wardSelect = document.getElementById("wardSelect");
+      const vehicleNumberInput = document.getElementById("vehicleNumber");
 
-      // === HELPERS ===
-      const normalizePlate = s => (s || "").toString().toUpperCase().replace(/[^A-Z0-9]/g, "");
+      // map-to-vehicle mapping
+      const wardToVehicle = {
+        "Ward22-A": "KA-17-D-5186",
+        "Ward22-B": "KA-17-D-9394",
+        "Ward3": "KA-03-9012",
+        "Ward4": "KA-04-3456"
+      };
+
+      // helper: set status
+      function setStatus(text, level="ok") {
+        statusBar.className = level;
+        statusBar.textContent = "Status: " + text;
+        console.log("[STATUS]", text);
+      }
+
+      // helpers for flexible API field detection
       function getAny(obj, keys) {
         for (const k of keys) {
           if (obj && obj[k] !== undefined && obj[k] !== null && obj[k] !== "") return obj[k];
         }
         return undefined;
       }
+      const normalizePlate = s => (s || "").toString().toUpperCase().replace(/[^A-Z0-9]/g, "");
       function parseLatLon(v) {
-        let lat = getAny(v, ["latitude","Latitude","lat","Lat","LATITUDE","lattitude"]);
-        let lon = getAny(v, ["longitude","Longitude","lon","Lon","LONGITUDE","lng","Lng",]);
+        if (!v) return null;
+        let lat = getAny(v, ["latitude","Latitude","lat","Lat","LATITUDE","lattitude","LATTITUDE"]);
+        let lon = getAny(v, ["longitude","Longitude","lon","Lon","LONGITUDE","lng","Lng","LONG"]);
         lat = parseFloat(lat); lon = parseFloat(lon);
-        if (!Number.isNaN(lat) && !Number.isNaN(lon)) {
-          if (Math.abs(lat) > 90 && Math.abs(lon) <= 90) { const t = lat; lat = lon; lon = t; }
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+        // sometimes lat/lon swapped:
+        if (Math.abs(lat) > 90 && Math.abs(lon) <= 90) {
+          const t = lat; lat = lon; lon = t;
         }
-        if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat)<=90 && Math.abs(lon)<=180) return {lat, lon};
+        if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180) return { lat, lon };
         return null;
       }
-      function setStatus(text, level="ok") {
-        statusBar.className = level; // ok | warn | alert
-        statusBar.textContent = "Status: " + text;
-      }
-    // Mapping wards to vehicle numbers
-    const wardToVehicle = {
-      "Ward22-A": "KA-17-D-5186",
-      "Ward22-B": "KA-17-D-9394",
-      "Ward3": "KA-03-9012",
-      "Ward4": "KA-04-3456"
-    };
 
-    // ✅ Get elements (only once!)
-    const wardSelect = document.getElementById("wardSelect");
-    const vehicleNumberInput = document.getElementById("vehicleNumber");
-
-    // ✅ Event listener when ward is selected
-    wardSelect.addEventListener("change", function() {
-      const selectedWard = wardSelect.value;
-      if (selectedWard && wardToVehicle[selectedWard]) {
-        vehicleNumberInput.value = wardToVehicle[selectedWard];
-        console.log("Selected Vehicle:", wardToVehicle[selectedWard]);
-      } else {
-        vehicleNumberInput.value = ""; // clear if no ward
-      }
-    });
-
-      // === MAP SETUP ===
-      const map = new Map({ basemap: "topo-vector" });
+      // --- MAP SETUP ---
+      const map = new Map({ basemap: "streets-navigation-vector" });
       const view = new MapView({
         container: "viewDiv",
         map,
@@ -129,7 +162,7 @@
         zoom: 14
       });
 
-      // === GRAPHICS (WARD 1) – using your same coordinates ===
+      // --- Ward polygon & routes (copied from your original) ---
       const ward1Polygon = new Polygon({
         rings: [[
           [75.906312929997796,14.463494624976988],
@@ -331,8 +364,7 @@
         ]],
         spatialReference: { wkid: 4326 }
       });
-
-      // Optional visual markers (your given points)
+	  // Optional visual markers (your given points)
       const startPointGraphic = new Graphic({
         geometry: new Point({ longitude: 75.902828, latitude: 14.464268, spatialReference: { wkid: 4326 } }),
         symbol: { type: "simple-marker", color: "green", size: "8px" }
@@ -350,157 +382,167 @@
         symbol: { type: "simple-marker", color: "red", size: "8px" }
       });
 
-      // Ward style graphics
+      // graphics
       const wardFillGraphic = new Graphic({
         geometry: ward1Polygon,
-        symbol: { type: "simple-fill", color: [227,139,79,0.2], outline: { color: [0,0,0,1], width: 1 } }
+        symbol: { type: "simple-fill", color: [227,139,79,0.12], outline: { color: [227,139,79,0.7], width: 1 } }
       });
-      const routeLineGraphic1 = new Graphic({
-        geometry: ward1Route1,
-        symbol: { type: "simple-line", color: [40,98,228], width: 3 }
-      });
-      const routeLineGraphic2 = new Graphic({
-        geometry: ward1Route2,
-        symbol: { type: "simple-line", color: [40,98,228], width: 3 }
-      });
+      const routeLineGraphic1 = new Graphic({ geometry: ward1Route1, symbol: { type: "simple-line", color: [40,98,228], width: 3 } });
+      const routeLineGraphic2 = new Graphic({ geometry: ward1Route2, symbol: { type: "simple-line", color: [40,98,228], width: 3 }});
 
-      // Create a buffered corridor around both routes (geodesic) for deviation checks
-      const routeBuffer1 = geometryEngine.geodesicBuffer(ward1Route1, ROUTE_BUFFER_METERS, "meters");
-      const routeBuffer2 = geometryEngine.geodesicBuffer(ward1Route2, ROUTE_BUFFER_METERS, "meters");
-      const mergedRouteBuffer = geometryEngine.union([routeBuffer1, routeBuffer2]);
+      view.graphics.addMany([wardFillGraphic, routeLineGraphic1, routeLineGraphic2]);
 
-      const routeBufferGraphic = new Graphic({
-        geometry: mergedRouteBuffer,
-        symbol: { type: "simple-fill", color: [40,98,228,0.1], outline: { color: [40,98,228,0.6], width: 1 } }
-      });
+      // Build corridor buffer & merged buffer (geodesic)
+      let mergedRouteBuffer = null;
+      try {
+        const routeBuffer1 = geometryEngine.geodesicBuffer(ward1Route1, ROUTE_BUFFER_METERS, "meters");
+        const routeBuffer2 = geometryEngine.geodesicBuffer(ward1Route2, ROUTE_BUFFER_METERS, "meters");
+        mergedRouteBuffer = geometryEngine.union([routeBuffer1, routeBuffer2]);
+        const routeBufferGraphic = new Graphic({
+          geometry: mergedRouteBuffer,
+          symbol: { type: "simple-fill", color: [40,98,228,0.06], outline: { color: [40,98,228,0.4], width: 1 } }
+        });
+        view.graphics.add(routeBufferGraphic);
+      } catch (e) {
+        console.warn("Could not build route buffer:", e);
+      }
 
-      // Add all base graphics
-      view.graphics.addMany([
-        wardFillGraphic, routeBufferGraphic, routeLineGraphic1, routeLineGraphic2,
-        startPointGraphic, endPointGraphic, startPointGraphic2, endPointGraphic2
-      ]);
-
-      // === VEHICLE MARKER ===
+      // vehicle marker
       let vehicleGraphic = null;
       let firstGoToDone = false;
+      let isFetching = false;
+
+      wardSelect.addEventListener("change", () => {
+        const ward = wardSelect.value;
+        vehicleNumberInput.value = ward ? (wardToVehicle[ward] || "") : "";
+        // zoom to ward polygon for now (only ward1 exists)
+        try { view.goTo(ward1Polygon.extent.expand(1.1)); } catch(e){ console.warn(e); }
+      });
+
+      recenterBtn.addEventListener("click", () => {
+        if (vehicleGraphic && vehicleGraphic.geometry) {
+          view.goTo({ center: vehicleGraphic.geometry, zoom: 17 });
+        } else {
+          view.goTo({ center: [75.9063,14.4634], zoom: 14 });
+        }
+      });
+
+      // find candidate with flexible field names:
+      function findVehicleInApi(dataArray, targetPlate) {
+        if (!Array.isArray(dataArray)) return null;
+        const plateKeys = ["vehicleregno","vehicleRegNo","vehicleRegNumber","VehicleRegNo","VehicleRegNumber","VehicleNo","VehicleNumber","regno","RegNo"];
+        return dataArray.find(v => {
+          for (const k of plateKeys) {
+            if (v && v[k]) {
+              if (normalizePlate(v[k]) === targetPlate) return true;
+            }
+          }
+          return false;
+        });
+      }
 
       async function loadVehicle() {
-  try {
-    const res = await fetch(API_URL, { cache: "no-store" });
-    const data = await res.json();
-    if (!Array.isArray(data)) {
-      setStatus("Vehicle API error (not an array)", "warn");
-      return;
-    }
+        if (isFetching) { console.log("Previous fetch still running — skipping this tick"); return; }
+        isFetching = true;
+        try {
+          console.log("Fetching vehicle data from:", API_URL);
+          const res = await fetch(API_URL, { cache: "no-store" });
+          if (!res.ok) {
+            setStatus(`API error ${res.status}`, "warn");
+            console.error("API response not OK:", res.status, await res.text());
+            isFetching = false;
+            return;
+          }
+          const data = await res.json();
+          console.log("API response length:", Array.isArray(data) ? data.length : "not-array", data);
 
-    // ✅ get selected vehicle number from dropdown
-    const selectedVehicle = vehicleNumberInput.value;
-    if (!selectedVehicle) {
-      setStatus("No vehicle selected", "warn");
-      return;
-    }
+          const selectedVehicle = (vehicleNumberInput.value || "").trim();
+          if (!selectedVehicle) { setStatus("No vehicle selected", "warn"); isFetching = false; return; }
+          const targetNorm = normalizePlate(selectedVehicle);
 
-    const targetNorm = normalizePlate(selectedVehicle);
+          const candidate = findVehicleInApi(data, targetNorm);
+          if (!candidate) { setStatus(`Vehicle ${selectedVehicle} not found`, "warn"); isFetching = false; return; }
 
-    const candidate = data.find(v => {
-      const plate = getAny(v, [
-        "vehicleregno","vehicleRegNo","vehicleRegNumber","VehicleRegNo",
-        "VehicleRegNumber","VehicleNo","VehicleNumber"
-      ]);
-      return normalizePlate(plate) === targetNorm;
-    });
-    if (!candidate) {
-      setStatus(`Vehicle ${selectedVehicle} not found`, "warn");
-      return;
-    }
-    const fix = parseLatLon(candidate);
-    if (!fix) {
-      setStatus(`Vehicle ${selectedVehicle} has invalid coordinates`, "warn");
-      return;
-    }
-    const { lat, lon } = fix;
+          const fix = parseLatLon(candidate);
+          if (!fix) { setStatus(`Vehicle ${selectedVehicle} has invalid coords`, "warn"); console.log("Candidate object:", candidate); isFetching = false; return; }
+          const { lat, lon } = fix;
 
-    if (!vehicleGraphic) {
-      vehicleGraphic = new Graphic({
-        geometry: { type: "point", longitude: lon, lattitude: lat },
-            symbol: {
-      type: "picture-marker",   // Use image instead of circle
-    url: "truck.png",  // Path to your vehicle image
-    width: "32px",            // Adjust size
-    height: "32px"
-    },
-    popupTemplate: {
-      title: selectedVehicle,
-      content: `Lat: ${lat}<br>Lon: ${lon}`
-    }
-  });
-  view.graphics.add(vehicleGraphic);
-    } else {
-      vehicleGraphic.geometry = { type: "point", longitude: lon, latitude: lat };
-      vehicleGraphic.popupTemplate = { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` };
-    }
+          // create or update vehicleGraphic
+          if (!vehicleGraphic) {
+            vehicleGraphic = new Graphic({
+              geometry: new Point({ longitude: lon, latitude: lat }),
+              symbol: {
+                type: "picture-marker",
+                url: "images/truck.png", // ensure this path exists & is accessible
+                width: "36px",
+                height: "36px"
+              },
+              popupTemplate: { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` }
+            });
+            view.graphics.add(vehicleGraphic);
+          } else {
+            // update geometry & popup
+            vehicleGraphic.geometry = new Point({ longitude: lon, latitude: lat });
+            vehicleGraphic.popupTemplate = { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` };
+          }
 
-    if (!firstGoToDone) {
-      firstGoToDone = true;
-      view.goTo({ center: [lon, lat], zoom: 16 });
-    }
+          if (!firstGoToDone) {
+            try { view.goTo({ center: [lon, lat], zoom: 17 }); } catch(e){ console.warn(e); }
+            firstGoToDone = true;
+          }
 
-    checkDeviationAndUpdateStatus();
-  } catch (err) {
-    console.error(err);
-    setStatus("Vehicle API fetch error", "warn");
-  }
-}
+          // deviation checks
+          checkDeviationAndUpdateStatus();
+
+          isFetching = false;
+        } catch (err) {
+          console.error("Fetch failed:", err);
+          setStatus("Vehicle API fetch error", "warn");
+          isFetching = false;
+        }
+      }
 
       function checkDeviationAndUpdateStatus() {
-        if (!vehicleGraphic) return;
-
+        if (!vehicleGraphic || !vehicleGraphic.geometry) return;
         const p = vehicleGraphic.geometry;
-        const insideWard = geometryEngine.contains(ward1Polygon, p);
-        const onCorridor = geometryEngine.contains(mergedRouteBuffer, p);
+        let insideWard = false, onCorridor = false;
+        try {
+          insideWard = geometryEngine.contains(ward1Polygon, p);
+        } catch(e){ console.warn("geometryEngine.contains ward check failed:", e); }
+        try {
+          if (mergedRouteBuffer) onCorridor = geometryEngine.contains(mergedRouteBuffer, p);
+        } catch(e){ console.warn("geometryEngine.contains buffer check failed:", e); }
 
         if (!insideWard && !onCorridor) {
           setStatus("ROUTE DEVIATION: outside ward & route corridor!", "alert");
         } else if (!insideWard && onCorridor) {
-          setStatus("Warning: On route but outside ward boundary", "warn");
+          setStatus("On route but outside ward boundary", "warn");
         } else if (insideWard && !onCorridor) {
-          setStatus(`Warning: Off the route (> ${ROUTE_BUFFER_METERS} m)`, "warn");
+          setStatus(`Off route (> ${ROUTE_BUFFER_METERS} m)`, "warn");
         } else {
           setStatus("On route within ward ✅", "ok");
         }
       }
 
-      // === EVENTS / CONTROLS ===
-      wardSelect.addEventListener("change", () => {
-        // In future, load different ward geometry here.
-        // For now we only have Ward 1 hardcoded.
-        view.goTo(ward1Polygon.extent.expand(1.2));
-        setStatus("Ward 1 loaded");
-      });
-
-      recenterBtn.addEventListener("click", () => {
-        if (vehicleGraphic) view.goTo({ center: vehicleGraphic.geometry, zoom: 17 });
-      });
-
-      // Initial view
+      // Start
       view.when(() => {
-        view.goTo(ward1Polygon.extent.expand(1.2));
-        setStatus("Map ready – tracking started");
-        loadVehicle(); // first load immediately
-        setInterval(() => { loadVehicle(); }, REFRESH_MS);
+        try { view.goTo(ward1Polygon.extent.expand(1.1)); } catch(e){ console.warn(e); }
+        setStatus("Map ready — tracking started");
+        loadVehicle();
+        // keep one interval running
+        setInterval(loadVehicle, REFRESH_MS);
       });
-    });
+
+    }); // require end
+
+    // Service worker — leave as-is but watch console output if registration fails
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./service-worker.js')
-          .then(reg => console.log("✅ Service Worker registered:", reg.scope))
-          .catch(err => console.error("❌ Service Worker registration failed:", err));
+          .then(reg => console.log("Service Worker registered:", reg.scope))
+          .catch(err => console.warn("Service Worker registration failed:", err));
       });
     }
-	
   </script>
 </body>
 </html>
-
-
-
