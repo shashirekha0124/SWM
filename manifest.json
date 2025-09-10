@@ -2,7 +2,7 @@
   "name": "SWM Driver App",
   "short_name": "SWM Driver",
   "description": "Ward Routes & Live Tracking for SWM vehicles",
-  "start_url": "https://shashirekha0124.github.io/driver-app/index.html",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#111827",
   "theme_color": "#065f46",
@@ -20,3 +20,4 @@
     }
   ]
 }
+
