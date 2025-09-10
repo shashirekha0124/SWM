@@ -8,81 +8,26 @@
   <link rel="manifest" href="manifest.json">
   <script src="https://js.arcgis.com/4.29/"></script>
   <style>
-   html, body {
-  height: 100%;
-  width: 100%;
-  margin: 0;
-  font-family: system-ui, sans-serif;
-}
-
-#app {
-  height: 100%;
-  display: flex;
-  flex-direction: row; /* Default desktop: sidebar + map */
-}
-
-/* Sidebar */
-.sidebar {
-  width: 280px;
-  background: #111827;
-  color: #fff;
-  display: flex;
-  flex-direction: column;
-}
-
-.sidebar h1 {
-  font-size: 1rem;
-  margin: .5rem;
-  font-weight: 600;
-}
-
-.controls {
-  padding: .5rem;
-  display: flex;
-  flex-direction: column;
-  gap: .5rem;
-}
-
-.controls select, 
-.controls input, 
-.controls button {
-  font-size: 1rem;
-  padding: .5rem;
-  border-radius: .5rem;
-  border: 1px solid #d1d5db;
-  width: 100%;
-}
-
-/* Status bar */
-#statusBar {
-  padding: .5rem;
-  font-size: .9rem;
-}
-#statusBar.ok { color:#065f46; background:#ecfdf5; border-color:#a7f3d0; }
-#statusBar.warn { color:#92400e; background:#fffbeb; border-color:#fcd34d; }
-#statusBar.alert { color:#991b1b; background:#fef2f2; border-color:#fecaca; }
-
-/* Map */
-#viewDiv {
-  flex: 1;
-  width: 100%;
-}
-
-/* 📱 Mobile mode */
-@media (max-width: 768px) {
-  #app {
-    flex-direction: column; /* Stack sidebar on top */
-  }
-
-  .sidebar {
-    width: 100%;
-  }
-
-  #viewDiv {
-    flex: 1;
-    height: calc(100% - 220px); /* take full space under sidebar */
-  }
-}
+    html, body { height: 100%; width: 100%; margin: 0; }
+    #app { height: 100%; display: grid; grid-template-rows: auto auto 1fr; }
+    .topbar {
+      display: grid; gap: .5rem; grid-template-columns: 1fr auto;
+      padding: .5rem .75rem; background:#111827; color:#fff; align-items:center;
+    }
+    .topbar h1 { font-size: 1rem; margin: 0; font-weight:600; }
+    .controls { display:flex; gap:.5rem; align-items:center; }
+    select, button {
+      font-size: .95rem; padding: .4rem .6rem; border-radius: .5rem; border: 1px solid #d1d5db;
+    }
+    #statusBar {
+      font-family: system-ui, sans-serif;
+      padding: .5rem .75rem; font-size: .95rem;
+      background: #f9fafb; border-bottom: 1px solid #e5e7eb;
+    }
+    #statusBar.ok { color:#065f46; background:#ecfdf5; border-color:#a7f3d0; }
+    #statusBar.warn { color:#92400e; background:#fffbeb; border-color:#fcd34d; }
+    #statusBar.alert { color:#991b1b; background:#fef2f2; border-color:#fecaca; }
+    #viewDiv { height: 100%; width: 100%; }
   </style>
 </head>
 <body>
@@ -123,7 +68,7 @@
     ], function (Map, MapView, Point, Polygon, Polyline, Graphic, geometryEngine) {
 
       // === CONFIG ===
-      const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=WTZZZ3VZYitKR1RNYjBNMmpwN2dUOTF4TDcxL01vV0RqRWhZVTl3VXg0Yz0kaXRtcyQxMC0wOS0yMDI1IDEyOjIzOjI1";
+      const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=cVhSQlVrYlBaTE5BNFhVKzVZc3EwRk9vTUIreDlraVhQMk14MHl0QkVKST0kaXRtcyQxMC0wOS0yMDI1IDEwOjM0OjQ5";
       const ROUTE_BUFFER_METERS = 25; // allowable deviation from route
 
       // === UI HANDLES ===
@@ -154,7 +99,7 @@
       }
     // Mapping wards to vehicle numbers
     const wardToVehicle = {
-      "Ward22-A": "KA-17-D-5522",
+      "Ward22-A": "KA-17-D-5186",
       "Ward22-B": "KA-17-D-9394",
       "Ward3": "KA-03-9012",
       "Ward4": "KA-04-3456"
@@ -556,10 +501,5 @@
   </script>
 </body>
 </html>
-
-
-
-
-
 
 
