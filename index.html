@@ -5,7 +5,6 @@
   <title>SWM Driver App</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/light/main.css">
-	<link rel="manifest" href="manifest.json">
   <script src="https://js.arcgis.com/4.29/"></script>
   <style>
     html, body { height: 100%; width: 100%; margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; overflow: hidden; }
@@ -474,7 +473,7 @@
               geometry: new Point({ longitude: lon, latitude: lat }),
               symbol: {
                 type: "picture-marker",
-                url: "./truck.png", // ensure this path exists & is accessible
+                url: "images/truck.png", // ensure this path exists & is accessible
                 width: "36px",
                 height: "36px"
               },
@@ -547,7 +546,3 @@
   </script>
 </body>
 </html>
-
-
-
-
