@@ -1,45 +1,42 @@
-const CACHE_NAME = 'swm-driver-cache-v1';
+const CACHE_NAME = 'garbage-monitoring-cache-v1';
 const urlsToCache = [
-  './',
-  './index.html',
-  './manifest.json',
-  'https://js.arcgis.com/4.29/esri/themes/light/main.css',
-  'https://js.arcgis.com/4.29/'
+  '/',
+  '/index.html',
+  '/styles.css',
+  '/scripts.js',
+  '/icon-192.png',
+  '/icon-512.png'
 ];
 
-// Install SW and cache assets
-self.addEventListener('install', event => {
+self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
-      .then(() => self.skipWaiting())
+      .then((cache) => {
+        return cache.addAll(urlsToCache);
+      })
   );
 });
 
-// Activate SW and clean old caches
-self.addEventListener('activate', event => {
+self.addEventListener('activate', (event) => {
+  const cacheWhitelist = [CACHE_NAME];
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
-        keys.map(key => {
-          if (key !== CACHE_NAME) return caches.delete(key);
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          if (!cacheWhitelist.includes(cacheName)) {
+            return caches.delete(cacheName);
+          }
         })
-      )
-    )
+      );
+    })
   );
-  self.clients.claim();
 });
 
-// Fetch assets: try cache first, fallback to network
-self.addEventListener('fetch', event => {
+self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request)
-      .then(response => response || fetch(event.request))
-      .catch(() => {
-        // Optional: fallback page for offline
-        if (event.request.mode === 'navigate') {
-          return caches.match('./index.html');
-        }
+      .then((response) => {
+        return response || fetch(event.request);
       })
   );
 });
