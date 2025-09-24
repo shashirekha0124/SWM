@@ -1,42 +1,59 @@
-const CACHE_NAME = 'garbage-monitoring-cache-v1';
+const CACHE_NAME = 'garbage-mon-v1';
 const urlsToCache = [
   '/',
   '/index.html',
   '/styles.css',
   '/scripts.js',
-  '/icon-192.png',
-  '/icon-512.png'
+  '/icons/icon-192.png',
+  '/icons/icon-512.png'
 ];
 
-self.addEventListener('install', (event) => {
+// Install SW and cache assets
+self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => {
-        return cache.addAll(urlsToCache);
-      })
+    caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
   );
 });
 
-self.addEventListener('activate', (event) => {
-  const cacheWhitelist = [CACHE_NAME];
+// Activate SW and remove old caches
+self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (!cacheWhitelist.includes(cacheName)) {
-            return caches.delete(cacheName);
-          }
+    caches.keys().then(cacheNames => 
+      Promise.all(
+        cacheNames.map(cache => {
+          if (cache !== CACHE_NAME) return caches.delete(cache);
         })
-      );
-    })
+      )
+    )
   );
 });
 
-self.addEventListener('fetch', (event) => {
+// Fetch handler: serve cache first, fallback to network
+self.addEventListener('fetch', event => {
   event.respondWith(
     caches.match(event.request)
-      .then((response) => {
-        return response || fetch(event.request);
-      })
+      .then(response => response || fetch(event.request))
+      .catch(() => caches.match('/index.html')) // fallback for SPA
   );
+});
+
+// Optional: background sync for failed requests
+self.addEventListener('sync', event => {
+  if (event.tag === 'sync-reports') {
+    event.waitUntil(syncReports());
+  }
+});
+
+async function syncReports() {
+  // Implement syncing logic with server here
+  console.log('Syncing reports in background...');
+}
+
+// Optional: push notifications
+self.addEventListener('push', event => {
+  const data = event.data.json();
+  self.registration.showNotification(data.title, {
+    body: data.body,
+    icon: '/icons/icon-192.png'
+  });
 });
