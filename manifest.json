@@ -2,7 +2,7 @@
   "name": "SWM Driver App",
   "short_name": "SWM Driver",
   "description": "Live tracking & ward routes for SWM vehicles",
-  "start_url": "./",
+  "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#111827",
@@ -27,6 +27,7 @@
     }
   ]
 }
+
 
 
 
