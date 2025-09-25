@@ -1,10 +1,10 @@
 const CACHE_NAME = 'garbage-mon-v1';
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/icon-192.png',
-  '/icon-512.png',
-  '/truck.png'
+  '/SWM/',
+  '/SWM/index.html',
+  '/SWM/icon-192.png',
+  '/SWM/icon-512.png',
+  '/SWM/truck.png'
 ];
 
 // Install SW and cache assets
@@ -35,3 +35,4 @@ self.addEventListener('fetch', event => {
     })
   );
 });
+
