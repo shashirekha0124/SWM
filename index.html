@@ -109,9 +109,10 @@
     ], function (Map, MapView, Point, Polygon, Polyline, Graphic, geometryEngine) {
 
       // --- CONFIG: set correct API URL / token here ---
-      const TOKEN_API_URL = 'https://dsclitsapi.karnatakasmartcity.in/ITMSVehicleTripsUpdate/AuthenticateUser'; // 🔁 Replace with your token endpoint
-    const PROTECTED_API_URL = 'https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken'; // Example API that requires token
-
+      const REFRESH_MS = 15000; // vehicle polling interval
+    const ROUTE_BUFFER_METERS = 50;
+    const TOKEN_API_URL = 'https://dsclitsapi.karnatakasmartcity.in/ITMSVehicleTripsUpdate/AuthenticateUser';
+    const PROTECTED_API_URL = 'https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus';
       // UI handles
       const statusBar = document.getElementById("statusBar");
       const recenterBtn = document.getElementById("recenterBtn");
@@ -525,78 +526,80 @@
           setStatus("On route within ward ✅", "ok");
         }
       }
-		    async function fetchNewToken() {
-      try {
-        const response = await fetch(TOKEN_API_URL);
-        const data = await response.json();
+		          async function fetchNewToken() {
+        try {
+          const credentials = {
+            UserName: "dsclapi",    // 🔐 replace with actual username
+            Password: "Dscl@123"    // 🔐 replace with actual password
+          };
 
-        if (data.token) {
-          const expiryTime = Date.now() + 60 * 60 * 1000; // valid for 1 hour
-          localStorage.setItem('authToken', data.token);
+          const resp = await fetch(TOKEN_API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(credentials)
+          });
+
+          if (!resp.ok) {
+            console.error("Token endpoint returned", resp.status);
+            tokenStatusEl.textContent = 'Token: error';
+            return null;
+          }
+
+          const data = await resp.json();
+          console.log("Token response:", data);
+          const token = data.token || data.Token || data.accessToken || data.AccessToken;
+
+          if (!token) {
+            console.error("Token not found in response", data);
+            tokenStatusEl.textContent = 'Token: missing';
+            return null;
+          }
+
+          const expiryTime = Date.now() + (60 * 60 * 1000);
+          localStorage.setItem('authToken', token);
           localStorage.setItem('tokenExpiry', expiryTime);
-          console.log('✅ Token refreshed:', data.token);
-          document.getElementById('token-status').innerText = 'Token refreshed at: ' + new Date().toLocaleTimeString();
-        } else {
-          console.error('❌ No token in response');
+          tokenStatusEl.textContent = 'Token refreshed @ ' + new Date().toLocaleTimeString();
+          console.log('Token refreshed');
+          return token;
+        } catch (err) {
+          console.error("fetchNewToken error", err);
+          tokenStatusEl.textContent = 'Token: fetch error';
+          return null;
         }
-      } catch (err) {
-        console.error('❌ Error fetching token:', err);
       }
-    }
 
-    // 🔁 Ensure valid token before every API call
-    async function ensureValidToken() {
-      const token = localStorage.getItem('authToken');
-      const expiry = localStorage.getItem('tokenExpiry');
-
-      // If no token or expiring soon (less than 5 mins left)
-      if (!token || Date.now() > expiry - 5 * 60 * 1000) {
-        console.log('⚠️ Token expired or near expiry, refreshing...');
-        await fetchNewToken();
-      } else {
-        console.log('✅ Token still valid');
+      async function ensureValidToken() {
+        const token = localStorage.getItem('authToken');
+        const expiry = Number(localStorage.getItem('tokenExpiry') || 0);
+        if (!token || Date.now() > expiry - (5 * 60 * 1000)) return await fetchNewToken();
+        return token;
       }
-    }
 
-    // 🔄 Automatically refresh token every 55 minutes
-    function startAutoRefresh() {
-      fetchNewToken(); // get one immediately
-      setInterval(fetchNewToken, 55 * 60 * 1000); // refresh every 55 minutes
-    }
-
-    // 📡 Example: Call a protected API using the token
-    async function fetchProtectedData() {
-      await ensureValidToken(); // make sure token is valid
-      const token = localStorage.getItem('authToken');
-
-      try {
-        const response = await fetch(PROTECTED_API_URL, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const result = await response.json();
-        console.log('🚗 Vehicle Data:', result);
-        alert('Fetched protected data successfully. Check console.');
-      } catch (error) {
-        console.error('❌ API request failed:', error);
+      function startAutoRefresh() {
+        fetchNewToken();
+        setInterval(fetchNewToken, 55 * 60 * 1000);
       }
-    }
 
-    // ⚙️ Initialize on page load
-    document.addEventListener('DOMContentLoaded', () => {
-      startAutoRefresh();
-      document.getElementById('getDataBtn').addEventListener('click', fetchProtectedData);
-    });
+      async function loadVehicle() {
+        if (isFetching) return;
+        isFetching = true;
+        try {
+          const selectedVehicle = (vehicleNumberInput.value || "").trim();
+          if (!selectedVehicle) { setStatus("No vehicle selected", "warn"); isFetching=false; return; }
 
-      // Start
-      view.when(() => {
-        try { view.goTo(ward1Polygon.extent.expand(1.1)); } catch(e){ console.warn(e); }
-        setStatus("Map ready — tracking started");
-        loadVehicle();
-        // keep one interval running
-        setInterval(loadVehicle, REFRESH_MS);
-      });
+          const token = await ensureValidToken();
+          if (!token) { setStatus("No token available", "warn"); isFetching=false; return; }
 
-    }); // require end
+          const res = await fetch(PROTECTED_API_URL, {
+            cache: "no-store",
+            headers: { "Authorization": `Bearer ${token}` }
+          });
+
+          if (!res.ok) {
+            setStatus(`API error ${res.status}`, "warn");
+            isFetching = false;
+            return;
+          }
 
     // Service worker — leave as-is but watch console output if registration fails
     if ('serviceWorker' in navigator) {
@@ -609,6 +612,7 @@
   </script>
 </body>
 </html>
+
 
 
 
