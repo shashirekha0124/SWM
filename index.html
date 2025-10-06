@@ -109,8 +109,8 @@
     ], function (Map, MapView, Point, Polygon, Polyline, Graphic, geometryEngine) {
 
       // --- CONFIG: set correct API URL / token here ---
-      const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=MWo0WGhjL2FpZS9laUF1TGpWTTV3cERMRGhRc1pXY0hzR1pxNEJtSi9lcz0kaXRtcyQwNi0xMC0yMDI1IDExOjQ2OjE5";
-      const ROUTE_BUFFER_METERS = 25;
+      const TOKEN_API_URL = 'https://dsclitsapi.karnatakasmartcity.in/ITMSVehicleTripsUpdate/AuthenticateUser'; // 🔁 Replace with your token endpoint
+    const PROTECTED_API_URL = 'https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken'; // Example API that requires token
 
       // UI handles
       const statusBar = document.getElementById("statusBar");
@@ -525,6 +525,67 @@
           setStatus("On route within ward ✅", "ok");
         }
       }
+		    async function fetchNewToken() {
+      try {
+        const response = await fetch(TOKEN_API_URL);
+        const data = await response.json();
+
+        if (data.token) {
+          const expiryTime = Date.now() + 60 * 60 * 1000; // valid for 1 hour
+          localStorage.setItem('authToken', data.token);
+          localStorage.setItem('tokenExpiry', expiryTime);
+          console.log('✅ Token refreshed:', data.token);
+          document.getElementById('token-status').innerText = 'Token refreshed at: ' + new Date().toLocaleTimeString();
+        } else {
+          console.error('❌ No token in response');
+        }
+      } catch (err) {
+        console.error('❌ Error fetching token:', err);
+      }
+    }
+
+    // 🔁 Ensure valid token before every API call
+    async function ensureValidToken() {
+      const token = localStorage.getItem('authToken');
+      const expiry = localStorage.getItem('tokenExpiry');
+
+      // If no token or expiring soon (less than 5 mins left)
+      if (!token || Date.now() > expiry - 5 * 60 * 1000) {
+        console.log('⚠️ Token expired or near expiry, refreshing...');
+        await fetchNewToken();
+      } else {
+        console.log('✅ Token still valid');
+      }
+    }
+
+    // 🔄 Automatically refresh token every 55 minutes
+    function startAutoRefresh() {
+      fetchNewToken(); // get one immediately
+      setInterval(fetchNewToken, 55 * 60 * 1000); // refresh every 55 minutes
+    }
+
+    // 📡 Example: Call a protected API using the token
+    async function fetchProtectedData() {
+      await ensureValidToken(); // make sure token is valid
+      const token = localStorage.getItem('authToken');
+
+      try {
+        const response = await fetch(PROTECTED_API_URL, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const result = await response.json();
+        console.log('🚗 Vehicle Data:', result);
+        alert('Fetched protected data successfully. Check console.');
+      } catch (error) {
+        console.error('❌ API request failed:', error);
+      }
+    }
+
+    // ⚙️ Initialize on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      startAutoRefresh();
+      document.getElementById('getDataBtn').addEventListener('click', fetchProtectedData);
+    });
 
       // Start
       view.when(() => {
@@ -548,6 +609,7 @@
   </script>
 </body>
 </html>
+
 
 
 
