@@ -521,30 +521,21 @@
         setInterval(fetchNewToken, 55 * 60 * 1000);
       }
 
-          async function loadVehicle() {
+         async function loadVehicle() {
   if (isFetching) {
     console.log("Previous fetch still running — skipping this tick");
     return;
   }
   isFetching = true;
-
   try {
     const selectedVehicle = (vehicleNumberInput.value || "").trim();
     if (!selectedVehicle) {
       setStatus("No vehicle selected", "warn");
       return;
     }
-
-    const token = await ensureValidToken();
-    if (!token) {
-      setStatus("No token available", "warn");
-      return;
-    }
-
     console.log("Fetching vehicle data...");
-    const res = await fetch(PROTECTED_API_URL, {
-      cache: "no-store",
-      headers: { "Authorization": `Bearer ${token}` }
+    const res = await fetch(`${PROTECTED_API_URL}?RequestToken=${token}`, {
+      cache: "no-store"
     });
 
     if (!res.ok) {
@@ -591,22 +582,23 @@
     }
 
     if (!firstGoToDone) {
-      try { await view.goTo({ center: [lon, lat], zoom: 17 }); } catch(e){ console.warn(e); }
+      try {
+        await view.goTo({ center: [lon, lat], zoom: 17 });
+      } catch (e) {
+        console.warn(e);
+      }
       firstGoToDone = true;
     }
 
     checkDeviationAndUpdateStatus();
 
-  } catch(err) {
+  } catch (err) {
     console.error("Fetch failed:", err);
     setStatus("Vehicle API fetch error", "warn");
   } finally {
     isFetching = false;
   }
 }
-
-// --- Start token refresh ---
-startAutoRefresh();
 
 // --- Service worker registration ---
 if ('serviceWorker' in navigator) {
@@ -619,6 +611,7 @@ if ('serviceWorker' in navigator) {
   </script>
 </body>
 </html>
+
 
 
 
