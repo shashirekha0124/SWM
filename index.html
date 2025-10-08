@@ -521,98 +521,98 @@
         setInterval(fetchNewToken, 55 * 60 * 1000);
       }
 
-           async function loadVehicle() {
-        if (isFetching) {
-          console.log("Previous fetch still running — skipping this tick");
-          return;
-        }
-        isFetching = true;
-        try {
-          const selectedVehicle = (vehicleNumberInput.value || "").trim();
-          if (!selectedVehicle) {
-            setStatus("No vehicle selected", "warn");
-            isFetching = false;
-            return;
-          }
+          async function loadVehicle() {
+  if (isFetching) {
+    console.log("Previous fetch still running — skipping this tick");
+    return;
+  }
+  isFetching = true;
 
-          const token = await ensureValidToken();
-          if (!token) {
-            setStatus("No token available", "warn");
-            isFetching = false;
-            return;
-          }
+  try {
+    // 1️⃣ Get selected vehicle
+    const selectedVehicle = (vehicleNumberInput.value || "").trim();
+    if (!selectedVehicle) {
+      setStatus("No vehicle selected", "warn");
+      return;
+    }
 
-          console.log("Fetching vehicle data...");
-          const res = await fetch(PROTECTED_API_URL, {
-            cache: "no-store",
-            headers: { "Authorization": `Bearer ${token}` }
-          });
+    // 2️⃣ Ensure token is valid
+    const token = await ensureValidToken();
+    if (!token) {
+      setStatus("No token available", "warn");
+      return;
+    }
 
-          if (!res.ok) {
-            console.error("API response not OK:", res.status, await res.text());
-            setStatus(`API error ${res.status}`, "warn");
-            isFetching = false;
-            return;
-          }
+    // 3️⃣ Fetch vehicle data
+    console.log("Fetching vehicle data from:", PROTECTED_API_URL);
+    const res = await fetch(PROTECTED_API_URL, {
+      cache: "no-store",
+      headers: { "Authorization": `Bearer ${token}` }
+    });
 
-          const data = await res.json();
-          console.log("API response:", data);
+    if (!res.ok) {
+      const text = await res.text();
+      console.error("API response not OK:", res.status, text);
+      setStatus(`API error ${res.status}`, "warn");
+      return;
+    }
 
-          const targetNorm = normalizePlate(selectedVehicle);
-          const candidate = findVehicleInApi(data, targetNorm);
-          if (!candidate) {
-            setStatus(`Vehicle ${selectedVehicle} not found`, "warn");
-            isFetching = false;
-            return;
-          }
+    const data = await res.json();
+    console.log("API response length:", Array.isArray(data) ? data.length : "not-array", data);
 
-          const fix = parseLatLon(candidate);
-          if (!fix) {
-            setStatus(`Vehicle ${selectedVehicle} has invalid coordinates`, "warn");
-            console.log("Candidate object:", candidate);
-            isFetching = false;
-            return;
-          }
+    // 4️⃣ Find the vehicle
+    const targetNorm = normalizePlate(selectedVehicle);
+    const candidate = findVehicleInApi(data, targetNorm);
 
-          const { lat, lon } = fix;
+    if (!candidate) {
+      setStatus(`Vehicle ${selectedVehicle} not found`, "warn");
+      return;
+    }
 
-          // create or update vehicle marker
-          if (!vehicleGraphic) {
-            vehicleGraphic = new Graphic({
-              geometry: new Point({ longitude: lon, latitude: lat }),
-              symbol: {
-                type: "picture-marker",
-                url: "truck.png",
-                width: "36px",
-                height: "36px"
-              },
-              popupTemplate: { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` }
-            });
-            view.graphics.add(vehicleGraphic);
-          } else {
-            vehicleGraphic.geometry = new Point({ longitude: lon, latitude: lat });
-            vehicleGraphic.popupTemplate = { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` };
-          }
+    // 5️⃣ Parse coordinates
+    const fix = parseLatLon(candidate);
+    if (!fix) {
+      setStatus(`Vehicle ${selectedVehicle} has invalid coordinates`, "warn");
+      console.log("Candidate object:", candidate);
+      return;
+    }
 
-          if (!firstGoToDone) {
-            try {
-              await view.goTo({ center: [lon, lat], zoom: 17 });
-            } catch (e) { console.warn(e); }
-            firstGoToDone = true;
-          }
+    const { lat, lon } = fix;
 
-          checkDeviationAndUpdateStatus();
-        } catch (err) {
-          console.error("Fetch failed:", err);
-          setStatus("Vehicle API fetch error", "warn");
-        } finally {
-          isFetching = false;
-        }
-      }
+    // 6️⃣ Create or update vehicle graphic
+    if (!vehicleGraphic) {
+      vehicleGraphic = new Graphic({
+        geometry: new Point({ longitude: lon, latitude: lat }),
+        symbol: {
+          type: "picture-marker",
+          url: "truck.png",
+          width: "36px",
+          height: "36px"
+        },
+        popupTemplate: { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` }
+      });
+      view.graphics.add(vehicleGraphic);
+    } else {
+      vehicleGraphic.geometry = new Point({ longitude: lon, latitude: lat });
+      vehicleGraphic.popupTemplate = { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` };
+    }
 
-      // 🔄 Start auto-refresh loop
-      startAutoRefresh();
-      setInterval(loadVehicle, REFRESH_MS);
+    // 7️⃣ First goTo
+    if (!firstGoToDone) {
+      try { await view.goTo({ center: [lon, lat], zoom: 17 }); } catch(e){ console.warn(e); }
+      firstGoToDone = true;
+    }
+
+    // 8️⃣ Deviation check
+    checkDeviationAndUpdateStatus();
+
+  } catch (err) {
+    console.error("Fetch failed:", err);
+    setStatus("Vehicle API fetch error", "warn");
+  } finally {
+    isFetching = false;
+  }
+}
 
       // 🟢 Service worker setup
       if ('serviceWorker' in navigator) {
@@ -625,6 +625,7 @@
   </script>
 </body>
 </html>
+
 
 
 
