@@ -594,11 +594,12 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./service-worker.js')
       .then(reg => console.log("Service Worker registered:", reg.scope))
       .catch(err => console.warn("Service Worker registration failed:", err));
-  }
+  });
 }
-  </script>
+</script>
 </body>
 </html>
+
 
 
 
