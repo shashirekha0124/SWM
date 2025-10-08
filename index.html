@@ -109,8 +109,11 @@
     ], function (Map, MapView, Point, Polygon, Polyline, Graphic, geometryEngine) {
 
       // --- CONFIG: set correct API URL / token here ---
-      const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=MmZ4ZEIxVEtwRGpQMVRvSkdCT1AxSFFBTjhsZ1VpdTRPeGJLSmxtQ2FLQT0kaXRtcyQwOC0xMC0yMDI1IDEyOjUzOjI0";
-      const ROUTE_BUFFER_METERS = 25;
+      // --- CONFIG: set correct API URL / token here ---
+      const REFRESH_MS = 15000; // vehicle polling interval
+    const ROUTE_BUFFER_METERS = 50;
+    const TOKEN_API_URL = 'https://dsclitsapi.karnatakasmartcity.in/ITMSVehicleTripsUpdate/AuthenticateUser';
+    const PROTECTED_API_URL = 'https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus';
 
       // UI handles
       const statusBar = document.getElementById("statusBar");
@@ -443,68 +446,7 @@
         });
       }
 
-      async function loadVehicle() {
-        if (isFetching) { console.log("Previous fetch still running — skipping this tick"); return; }
-        isFetching = true;
-        try {
-          console.log("Fetching vehicle data from:", API_URL);
-          const res = await fetch(API_URL, { cache: "no-store" });
-          if (!res.ok) {
-            setStatus(`API error ${res.status}`, "warn");
-            console.error("API response not OK:", res.status, await res.text());
-            isFetching = false;
-            return;
-          }
-          const data = await res.json();
-          console.log("API response length:", Array.isArray(data) ? data.length : "not-array", data);
-
-          const selectedVehicle = (vehicleNumberInput.value || "").trim();
-          if (!selectedVehicle) { setStatus("No vehicle selected", "warn"); isFetching = false; return; }
-          const targetNorm = normalizePlate(selectedVehicle);
-
-          const candidate = findVehicleInApi(data, targetNorm);
-          if (!candidate) { setStatus(`Vehicle ${selectedVehicle} not found`, "warn"); isFetching = false; return; }
-
-          const fix = parseLatLon(candidate);
-          if (!fix) { setStatus(`Vehicle ${selectedVehicle} has invalid coords`, "warn"); console.log("Candidate object:", candidate); isFetching = false; return; }
-          const { lat, lon } = fix;
-
-          // create or update vehicleGraphic
-          if (!vehicleGraphic) {
-            vehicleGraphic = new Graphic({
-              geometry: new Point({ longitude: lon, latitude: lat }),
-              symbol: {
-                type: "picture-marker",
-                url: "truck.png", // ensure this path exists & is accessible
-                width: "36px",
-                height: "36px"
-              },
-              popupTemplate: { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` }
-            });
-            view.graphics.add(vehicleGraphic);
-          } else {
-            // update geometry & popup
-            vehicleGraphic.geometry = new Point({ longitude: lon, latitude: lat });
-            vehicleGraphic.popupTemplate = { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` };
-          }
-
-          if (!firstGoToDone) {
-            try { view.goTo({ center: [lon, lat], zoom: 17 }); } catch(e){ console.warn(e); }
-            firstGoToDone = true;
-          }
-
-          // deviation checks
-          checkDeviationAndUpdateStatus();
-
-          isFetching = false;
-        } catch (err) {
-          console.error("Fetch failed:", err);
-          setStatus("Vehicle API fetch error", "warn");
-          isFetching = false;
-        }
-      }
-
-      function checkDeviationAndUpdateStatus() {
+     function checkDeviationAndUpdateStatus() {
         if (!vehicleGraphic || !vehicleGraphic.geometry) return;
         const p = vehicleGraphic.geometry;
         let insideWard = false, onCorridor = false;
@@ -525,17 +467,80 @@
           setStatus("On route within ward ✅", "ok");
         }
       }
+		async function fetchNewToken() {
+        try {
+          const credentials = {
+            UserName: "itms",    // 🔐 replace with actual username
+            Password: "Itms@123"    // 🔐 replace with actual password
+          };
 
-      // Start
-      view.when(() => {
-        try { view.goTo(ward1Polygon.extent.expand(1.1)); } catch(e){ console.warn(e); }
-        setStatus("Map ready — tracking started");
-        loadVehicle();
-        // keep one interval running
-        setInterval(loadVehicle, REFRESH_MS);
-      });
+          const resp = await fetch(TOKEN_API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(credentials)
+          });
 
-    }); // require end
+          if (!resp.ok) {
+            console.error("Token endpoint returned", resp.status);
+            tokenStatusEl.textContent = 'Token: error';
+            return null;
+          }
+
+          const data = await resp.json();
+          console.log("Token response:", data);
+          const token = data.token || data.Token || data.accessToken || data.AccessToken;
+
+          if (!token) {
+            console.error("Token not found in response", data);
+            tokenStatusEl.textContent = 'Token: missing';
+            return null;
+          }
+
+          const expiryTime = Date.now() + (60 * 60 * 1000);
+          localStorage.setItem('authToken', token);
+          localStorage.setItem('tokenExpiry', expiryTime);
+          tokenStatusEl.textContent = 'Token refreshed @ ' + new Date().toLocaleTimeString();
+          console.log('Token refreshed');
+          return token;
+        } catch (err) {
+          console.error("fetchNewToken error", err);
+          tokenStatusEl.textContent = 'Token: fetch error';
+          return null;
+        }
+      }
+
+      async function ensureValidToken() {
+        const token = localStorage.getItem('authToken');
+        const expiry = Number(localStorage.getItem('tokenExpiry') || 0);
+        if (!token || Date.now() > expiry - (5 * 60 * 1000)) return await fetchNewToken();
+        return token;
+      }
+
+      function startAutoRefresh() {
+        fetchNewToken();
+        setInterval(fetchNewToken, 55 * 60 * 1000);
+      }
+
+      async function loadVehicle() {
+        if (isFetching) return;
+        isFetching = true;
+        try {
+          const selectedVehicle = (vehicleNumberInput.value || "").trim();
+          if (!selectedVehicle) { setStatus("No vehicle selected", "warn"); isFetching=false; return; }
+
+          const token = await ensureValidToken();
+          if (!token) { setStatus("No token available", "warn"); isFetching=false; return; }
+
+          const res = await fetch(PROTECTED_API_URL, {
+            cache: "no-store",
+            headers: { "Authorization": `Bearer ${token}` }
+          });
+
+          if (!res.ok) {
+            setStatus(`API error ${res.status}`, "warn");
+            isFetching = false;
+            return;
+          }
 
     // Service worker — leave as-is but watch console output if registration fails
     if ('serviceWorker' in navigator) {
@@ -548,6 +553,7 @@
   </script>
 </body>
 </html>
+
 
 
 
