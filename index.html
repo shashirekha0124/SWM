@@ -520,12 +520,8 @@
         fetchNewToken();
         setInterval(fetchNewToken, 55 * 60 * 1000);
       }
-
-         async function loadVehicle() {
-  if (isFetching) {
-    console.log("Previous fetch still running — skipping this tick");
-    return;
-  }
+async function loadVehicle() {
+  if (isFetching) return;
   isFetching = true;
   try {
     const selectedVehicle = (vehicleNumberInput.value || "").trim();
@@ -533,11 +529,14 @@
       setStatus("No vehicle selected", "warn");
       return;
     }
-    console.log("Fetching vehicle data...");
-    const res = await fetch(`${PROTECTED_API_URL}?RequestToken=${token}`, {
-      cache: "no-store"
-    });
 
+    const token = await ensureValidToken();
+    if (!token) {
+      setStatus("No token available", "warn");
+      return;
+    }
+
+    const res = await fetch(`${PROTECTED_API_URL}?RequestToken=${token}`, { cache: "no-store" });
     if (!res.ok) {
       console.error("API response not OK:", res.status, await res.text());
       setStatus(`API error ${res.status}`, "warn");
@@ -557,22 +556,15 @@
     const fix = parseLatLon(candidate);
     if (!fix) {
       setStatus(`Vehicle ${selectedVehicle} has invalid coordinates`, "warn");
-      console.log("Candidate object:", candidate);
       return;
     }
 
     const { lat, lon } = fix;
 
-    // create or update vehicle marker
     if (!vehicleGraphic) {
       vehicleGraphic = new Graphic({
         geometry: new Point({ longitude: lon, latitude: lat }),
-        symbol: {
-          type: "picture-marker",
-          url: "truck.png",
-          width: "36px",
-          height: "36px"
-        },
+        symbol: { type: "simple-marker", color: "red", size: "12px" },
         popupTemplate: { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` }
       });
       view.graphics.add(vehicleGraphic);
@@ -582,11 +574,7 @@
     }
 
     if (!firstGoToDone) {
-      try {
-        await view.goTo({ center: [lon, lat], zoom: 17 });
-      } catch (e) {
-        console.warn(e);
-      }
+      await view.goTo({ center: [lon, lat], zoom: 17 });
       firstGoToDone = true;
     }
 
@@ -611,6 +599,7 @@ if ('serviceWorker' in navigator) {
   </script>
 </body>
 </html>
+
 
 
 
