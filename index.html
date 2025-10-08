@@ -520,90 +520,137 @@
         fetchNewToken();
         setInterval(fetchNewToken, 55 * 60 * 1000);
       }
-async function loadVehicle() {
-  if (isFetching) return;
-  isFetching = true;
-  try {
-    const selectedVehicle = (vehicleNumberInput.value || "").trim();
-    if (!selectedVehicle) {
-      setStatus("No vehicle selected", "warn");
-      return;
-    }
+ async function loadVehicle() {
+        if (isFetchingVehicle) { console.log('Skipping loadVehicle: previous still running'); return; }
+        isFetchingVehicle = true;
 
-    const token = await ensureValidToken();
-    if (!token) {
-      setStatus("No token available", "warn");
-      return;
-    }
+        try {
+          const selectedVehicle = (vehicleNumberInput.value || '').trim();
+          if (!selectedVehicle) { setStatus('No vehicle selected', 'warn'); isFetchingVehicle = false; return; }
+          const targetNorm = normalizePlate(selectedVehicle);
 
-    const res = await fetch(`${PROTECTED_API_URL}?RequestToken=${token}`, { cache: "no-store" });
-    if (!res.ok) {
-      console.error("API response not OK:", res.status, await res.text());
-      setStatus(`API error ${res.status}`, "warn");
-      return;
-    }
+          const token = await ensureValidToken();
+          if (!token) { setStatus('No token: cannot fetch vehicle', 'warn'); isFetchingVehicle = false; return; }
 
-    const data = await res.json();
-    console.log("API response:", data);
+          // Attach token as both header and querystring (server may expect either)
+          const fetchUrl = `${PROTECTED_API_URL}?RequestToken=${encodeURIComponent(token)}`;
+          console.log('Fetching vehicle list from', fetchUrl);
 
-    const targetNorm = normalizePlate(selectedVehicle);
-    const candidate = findVehicleInApi(data, targetNorm);
-    if (!candidate) {
-      setStatus(`Vehicle ${selectedVehicle} not found`, "warn");
-      return;
-    }
+          const res = await fetch(fetchUrl, {
+            cache: 'no-store',
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
 
-    const fix = parseLatLon(candidate);
-    if (!fix) {
-      setStatus(`Vehicle ${selectedVehicle} has invalid coordinates`, "warn");
-      return;
-    }
+          if (!res.ok) {
+            const txt = await res.text();
+            console.error('Vehicle API error', res.status, txt);
+            setStatus('Vehicle API error: ' + res.status, 'warn');
+            isFetchingVehicle = false;
+            return;
+          }
 
-    const { lat, lon } = fix;
+          const raw = await res.json();
+          console.log('Vehicle API raw response', raw);
 
-    if (!vehicleGraphic) {
-      vehicleGraphic = new Graphic({
-        geometry: new Point({ longitude: lon, latitude: lat }),
-        symbol: { type: "simple-marker", color: "red", size: "12px" },
-        popupTemplate: { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` }
+          // Find array inside response (tolerant)
+          let arr = null;
+          if (Array.isArray(raw)) arr = raw;
+          else if (Array.isArray(raw.data)) arr = raw.data;
+          else if (Array.isArray(raw.Data)) arr = raw.Data;
+          else if (Array.isArray(raw.result)) arr = raw.result;
+          else if (Array.isArray(raw.Response)) arr = raw.Response;
+          else {
+            // try to find the first array property
+            for (const k in raw) {
+              if (Array.isArray(raw[k])) { arr = raw[k]; break; }
+            }
+          }
+          if (!arr) {
+            console.warn('Could not find array in vehicle response, using raw as single object');
+            arr = Array.isArray(raw) ? raw : [raw];
+          }
+
+          const candidate = findVehicleInApi(arr, targetNorm);
+          if (!candidate) { setStatus(`Vehicle ${selectedVehicle} not found`, 'warn'); isFetchingVehicle = false; return; }
+
+          const fix = parseLatLon(candidate);
+          if (!fix) { setStatus('Vehicle has invalid coords', 'warn'); console.log('Candidate object:', candidate); isFetchingVehicle = false; return; }
+
+          const { lat, lon } = fix;
+
+          if (!vehicleGraphic) {
+            vehicleGraphic = new Graphic({
+              geometry: new Point({ longitude: lon, latitude: lat }),
+              symbol: { type: 'picture-marker', url: 'truck.png', width: '36px', height: '36px' },
+              popupTemplate: { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` }
+            });
+            view.graphics.add(vehicleGraphic);
+          } else {
+            vehicleGraphic.geometry = new Point({ longitude: lon, latitude: lat });
+            vehicleGraphic.popupTemplate = { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` };
+          }
+
+          if (!firstGo) {
+            try { view.goTo({ center: [lon, lat], zoom: 17 }); } catch(e){ console.warn(e); }
+            firstGo = true;
+          }
+
+          // deviation checks
+          try {
+            const insideWard = geometryEngine.contains(ward1Polygon, vehicleGraphic.geometry);
+            const onCorridor = mergedRouteBuffer ? geometryEngine.contains(mergedRouteBuffer, vehicleGraphic.geometry) : false;
+            if (!insideWard && !onCorridor) setStatus('ROUTE DEVIATION: outside ward & route corridor!', 'alert');
+            else if (!insideWard && onCorridor) setStatus('On route but outside ward boundary', 'warn');
+            else if (insideWard && !onCorridor) setStatus(`Off route (> ${ROUTE_BUFFER_METERS} m)`, 'warn');
+            else setStatus('On route within ward ✅', 'ok');
+          } catch (e) { console.warn('Deviation check failed', e); }
+
+        } catch (err) {
+          console.error('loadVehicle error', err);
+          setStatus('Vehicle fetch failed', 'warn');
+        } finally {
+          isFetchingVehicle = false;
+        }
+      } // end loadVehicle
+
+      // Start the process once view is ready
+      view.when(() => {
+        setStatus('Map ready — initializing token & polling', 'ok');
+        startAutoRefresh();
+        // initial token ensure & fetch
+        ensureValidToken().then(tok => {
+          if (!tok) setTokenStatus('missing');
+          loadVehicle(); // load first time
+          // polling
+          setInterval(loadVehicle, VEHICLE_POLL_MS);
+        });
       });
-      view.graphics.add(vehicleGraphic);
-    } else {
-      vehicleGraphic.geometry = new Point({ longitude: lon, latitude: lat });
-      vehicleGraphic.popupTemplate = { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` };
+
+      // manual debug button
+      debugBtn.addEventListener('click', async () => {
+        setStatus('Manual fetch triggered', 'ok');
+        const t = await ensureValidToken();
+        setTokenStatus(t ? 'ok' : 'missing');
+        loadVehicle();
+      });
+
+    }); // end require
+
+    // ========== SERVICE WORKER ==========
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js')
+          .then(reg => console.log('ServiceWorker registered', reg.scope))
+          .catch(err => console.warn('ServiceWorker failed', err));
+      });
     }
-
-    if (!firstGoToDone) {
-      await view.goTo({ center: [lon, lat], zoom: 17 });
-      firstGoToDone = true;
-    }
-
-    checkDeviationAndUpdateStatus();
-
-  } catch (err) {
-    console.error("Fetch failed:", err);
-    setStatus("Vehicle API fetch error", "warn");
-  } finally {
-    isFetching = false;
-  }
-}
-
-// --- Service worker registration ---
-// 🟢 Service worker setup
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./service-worker.js')
-      .then(reg => console.log("Service Worker registered:", reg.scope))
-      .catch(err => console.warn("Service Worker registration failed:", err));
-  });
-}
-
 // ✅ close the require() call and function properly
 });  // closes require([...], function(...))
 
 </script>
 </body>
 </html>
+
 
 
 
