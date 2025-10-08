@@ -529,47 +529,40 @@
   isFetching = true;
 
   try {
-    // 1️⃣ Get selected vehicle
     const selectedVehicle = (vehicleNumberInput.value || "").trim();
     if (!selectedVehicle) {
       setStatus("No vehicle selected", "warn");
       return;
     }
 
-    // 2️⃣ Ensure token is valid
     const token = await ensureValidToken();
     if (!token) {
       setStatus("No token available", "warn");
       return;
     }
 
-    // 3️⃣ Fetch vehicle data
-    console.log("Fetching vehicle data from:", PROTECTED_API_URL);
+    console.log("Fetching vehicle data...");
     const res = await fetch(PROTECTED_API_URL, {
       cache: "no-store",
       headers: { "Authorization": `Bearer ${token}` }
     });
 
     if (!res.ok) {
-      const text = await res.text();
-      console.error("API response not OK:", res.status, text);
+      console.error("API response not OK:", res.status, await res.text());
       setStatus(`API error ${res.status}`, "warn");
       return;
     }
 
     const data = await res.json();
-    console.log("API response length:", Array.isArray(data) ? data.length : "not-array", data);
+    console.log("API response:", data);
 
-    // 4️⃣ Find the vehicle
     const targetNorm = normalizePlate(selectedVehicle);
     const candidate = findVehicleInApi(data, targetNorm);
-
     if (!candidate) {
       setStatus(`Vehicle ${selectedVehicle} not found`, "warn");
       return;
     }
 
-    // 5️⃣ Parse coordinates
     const fix = parseLatLon(candidate);
     if (!fix) {
       setStatus(`Vehicle ${selectedVehicle} has invalid coordinates`, "warn");
@@ -579,7 +572,7 @@
 
     const { lat, lon } = fix;
 
-    // 6️⃣ Create or update vehicle graphic
+    // create or update vehicle marker
     if (!vehicleGraphic) {
       vehicleGraphic = new Graphic({
         geometry: new Point({ longitude: lon, latitude: lat }),
@@ -597,16 +590,14 @@
       vehicleGraphic.popupTemplate = { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` };
     }
 
-    // 7️⃣ First goTo
     if (!firstGoToDone) {
       try { await view.goTo({ center: [lon, lat], zoom: 17 }); } catch(e){ console.warn(e); }
       firstGoToDone = true;
     }
 
-    // 8️⃣ Deviation check
     checkDeviationAndUpdateStatus();
 
-  } catch (err) {
+  } catch(err) {
     console.error("Fetch failed:", err);
     setStatus("Vehicle API fetch error", "warn");
   } finally {
@@ -614,17 +605,21 @@
   }
 }
 
-      // 🟢 Service worker setup
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./service-worker.js')
-            .then(reg => console.log("Service Worker registered:", reg.scope))
-            .catch(err => console.warn("Service Worker registration failed:", err));
-        });
-      }
+// --- Start token refresh ---
+startAutoRefresh();
+
+// --- Service worker registration ---
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./service-worker.js')
+      .then(reg => console.log("Service Worker registered:", reg.scope))
+      .catch(err => console.warn("Service Worker registration failed:", err));
+  });
+}
   </script>
 </body>
 </html>
+
 
 
 
