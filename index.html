@@ -589,6 +589,7 @@ async function loadVehicle() {
 }
 
 // --- Service worker registration ---
+// 🟢 Service worker setup
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./service-worker.js')
@@ -596,10 +597,15 @@ if ('serviceWorker' in navigator) {
       .catch(err => console.warn("Service Worker registration failed:", err));
   });
 }
-}
+
+// ✅ close the require() call and function properly
+});  // closes function(...)
+});  // closes require([...], function(...))
+
 </script>
 </body>
 </html>
+
 
 
 
