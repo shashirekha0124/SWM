@@ -9,8 +9,8 @@ export async function fetchNewToken() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        strUserName:itms,
-      strPassword:Itms@123,
+        strUserName:"itms",
+      strPassword:"Itms@123",
       }),
     });
 
@@ -35,3 +35,4 @@ export async function fetchNewToken() {
 // Automatically refresh token every 1 hour
 setInterval(fetchNewToken, 60 * 60 * 1000); // 1 hour
 fetchNewToken(); // Initial token fetch
+
