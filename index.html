@@ -110,7 +110,8 @@
     ], function (Map, MapView, Point, Polygon, Polyline, Graphic, geometryEngine) {
 
       // --- CONFIG: set correct API URL / token here ---
-      import { ensureValidToken } from './token.js';
+     // main.js
+import { ensureValidToken } from './token.js';
 
 const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=";
 
@@ -121,7 +122,6 @@ async function getVehicleDetails(vehicleNo) {
   const token = await ensureValidToken();
 
   try {
-    // ✅ Construct GET URL with token and vehicle number
     const url = `${API_URL}?VehicleNo=${encodeURIComponent(vehicleNo)}&RequestToken=${encodeURIComponent(token)}`;
 
     console.log("[API] Fetching data from:", url);
@@ -140,6 +140,7 @@ async function getVehicleDetails(vehicleNo) {
 }
 
 export { getVehicleDetails };
+
 
       // UI handles
       const statusBar = document.getElementById("statusBar");
@@ -577,6 +578,7 @@ export { getVehicleDetails };
   </script>
 </body>
 </html>
+
 
 
 
