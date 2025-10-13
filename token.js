@@ -2,8 +2,8 @@
 // Handles token generation and refresh for ArcGIS services
 
 // Replace with your actual ArcGIS credentials
-const CLIENT_ID = "itms";
-const CLIENT_SECRET = "Itms@123";
+const strUserName = "itms";
+const strPassword = "Itms@123";
 
 // Token settings
 const TOKEN_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSVehicleTripsUpdate/AuthenticateUser";
@@ -15,8 +15,8 @@ const REFRESH_BEFORE_MS = 5 * 60 * 1000; // refresh 5 mins before expiry
  */
 async function fetchNewToken() {
   const params = new URLSearchParams({
-    client_id: CLIENT_ID,
-    client_secret: CLIENT_SECRET,
+    strUserName: strUserName,
+    strPassword: strPassword,
     grant_type: "client_credentials",
     f: "json"
   });
@@ -76,4 +76,5 @@ function scheduleAutoRefresh() {
     scheduleAutoRefresh();
   }
 })();
+
 
