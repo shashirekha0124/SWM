@@ -1,15 +1,27 @@
 from flask import Flask, jsonify
-from flask_cors import CORS
+from My_token import TokenManager  # ✅ import your token class
 
+# Initialize Flask app
 app = Flask(__name__)
 
-# Allow only your GitHub Pages origin
-CORS(app, origins=["https://shashirekha0124.github.io"])
+# Create a global token manager
+token_manager = TokenManager()
 
-@app.route("/get-token")
+# Route to get current token
+@app.route('/get-token', methods=['GET'])
 def get_token():
-    token = "MY_SECURE_TOKEN_12345"
-    return jsonify({"token": token})
+    try:
+        token = token_manager.get_token()
+        return jsonify({
+            'token': token,
+            'status': 'success'
+        })
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'status': 'failed'
+        }), 500
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+# Run the Flask server
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
