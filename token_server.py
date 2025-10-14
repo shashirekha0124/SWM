@@ -1,7 +1,10 @@
 from flask import Flask, jsonify
-app = Flask(__name__)
+from flask_cors import CORS
 
-@app.route('/get-token')
+app = Flask(__name__)
+CORS(app)  # this allows all origins; for stricter security, specify only your domain
+
+@app.route("/get-token")
 def get_token():
     token = "your_token_here"
     return jsonify({"token": token})
