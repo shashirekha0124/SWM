@@ -1,8 +1,11 @@
 from flask import Flask, jsonify
 from My_token import TokenManager  # ✅ import your token class
+from flask_cors import CORS
 
-# Initialize Flask app
 app = Flask(__name__)
+
+# Allow only your GitHub Pages origin
+CORS(app, origins=["https://shashirekha0124.github.io"])
 
 # Create a global token manager
 token_manager = TokenManager()
@@ -25,3 +28,4 @@ def get_token():
 # Run the Flask server
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
