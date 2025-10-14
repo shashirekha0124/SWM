@@ -484,67 +484,65 @@
         });
       }
 
-      async function loadVehicle() {
-        if (isFetching) { console.log("Previous fetch still running — skipping this tick"); return; }
-        isFetching = true;
-        try {
-          console.log("Fetching vehicle data from:", API_URL);
-          const res = await fetch(API_URL, { cache: "no-store" });
-          if (!res.ok) {
-            setStatus(`API error ${res.status}`, "warn");
-            console.error("API response not OK:", res.status, await res.text());
-            isFetching = false;
-            return;
-          }
-          const data = await res.json();
-          console.log("API response length:", Array.isArray(data) ? data.length : "not-array", data);
+     async function loadVehicle() {
+  if (isFetching) { console.log("Previous fetch still running — skipping this tick"); return; }
+  isFetching = true;
+  try {
+    const selectedVehicle = (vehicleNumberInput.value || "").trim();
+    if (!selectedVehicle) {
+      setStatus("No vehicle selected", "warn");
+      isFetching = false;
+      return;
+    }
 
-          const selectedVehicle = (vehicleNumberInput.value || "").trim();
-          if (!selectedVehicle) { setStatus("No vehicle selected", "warn"); isFetching = false; return; }
-          const targetNorm = normalizePlate(selectedVehicle);
+    const data = await getVehicleDetails(selectedVehicle);
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      setStatus(`Vehicle ${selectedVehicle} not found`, "warn");
+      isFetching = false;
+      return;
+    }
 
-          const candidate = findVehicleInApi(data, targetNorm);
-          if (!candidate) { setStatus(`Vehicle ${selectedVehicle} not found`, "warn"); isFetching = false; return; }
+    const candidate = data[0]; // assuming API returns single item
+    const fix = parseLatLon(candidate);
+    if (!fix) {
+      setStatus(`Vehicle ${selectedVehicle} has invalid coords`, "warn");
+      console.log("Candidate object:", candidate);
+      isFetching = false;
+      return;
+    }
 
-          const fix = parseLatLon(candidate);
-          if (!fix) { setStatus(`Vehicle ${selectedVehicle} has invalid coords`, "warn"); console.log("Candidate object:", candidate); isFetching = false; return; }
-          const { lat, lon } = fix;
+    const { lat, lon } = fix;
 
-          // create or update vehicleGraphic
-          if (!vehicleGraphic) {
-            vehicleGraphic = new Graphic({
-              geometry: new Point({ longitude: lon, latitude: lat }),
-              symbol: {
-                type: "picture-marker",
-                url: "truck.png", // ensure this path exists & is accessible
-                width: "36px",
-                height: "36px"
-              },
-              popupTemplate: { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` }
-            });
-            view.graphics.add(vehicleGraphic);
-          } else {
-            // update geometry & popup
-            vehicleGraphic.geometry = new Point({ longitude: lon, latitude: lat });
-            vehicleGraphic.popupTemplate = { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` };
-          }
+    if (!vehicleGraphic) {
+      vehicleGraphic = new Graphic({
+        geometry: new Point({ longitude: lon, latitude: lat }),
+        symbol: {
+          type: "picture-marker",
+          url: "truck.png",
+          width: "36px",
+          height: "36px"
+        },
+        popupTemplate: { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` }
+      });
+      view.graphics.add(vehicleGraphic);
+    } else {
+      vehicleGraphic.geometry = new Point({ longitude: lon, latitude: lat });
+      vehicleGraphic.popupTemplate = { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` };
+    }
 
-          if (!firstGoToDone) {
-            try { view.goTo({ center: [lon, lat], zoom: 17 }); } catch(e){ console.warn(e); }
-            firstGoToDone = true;
-          }
+    if (!firstGoToDone) {
+      try { view.goTo({ center: [lon, lat], zoom: 17 }); } catch(e){ console.warn(e); }
+      firstGoToDone = true;
+    }
 
-          // deviation checks
-          checkDeviationAndUpdateStatus();
-
-          isFetching = false;
-        } catch (err) {
-          console.error("Fetch failed:", err);
-          setStatus("Vehicle API fetch error", "warn");
-          isFetching = false;
-        }
-      }
-
+    checkDeviationAndUpdateStatus();
+  } catch (err) {
+    console.error("Fetch failed:", err);
+    setStatus("Vehicle API fetch error", "warn");
+  } finally {
+    isFetching = false;
+  }
+}
       function checkDeviationAndUpdateStatus() {
         if (!vehicleGraphic || !vehicleGraphic.geometry) return;
         const p = vehicleGraphic.geometry;
@@ -589,6 +587,7 @@
   </script>
 </body>
 </html>
+
 
 
 
