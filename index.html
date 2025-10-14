@@ -519,14 +519,18 @@ async function getVehicleDetails(vehicleregno) {
     }
 
     const data = await getVehicleDetails(selectedVehicle);
-    if (!data || !Array.isArray(data) || data.length === 0) {
-      setStatus(`Vehicle ${selectedVehicle} not found`, "warn");
-      isFetching = false;
-      return;
-    }
+let dataArray = [];
+if (Array.isArray(data)) dataArray = data;
+else if (data && typeof data === "object") dataArray = [data];
 
-    const candidate = data[0]; // assuming API returns single item
-    const fix = parseLatLon(candidate);
+if (!dataArray.length) {
+  setStatus(`Vehicle ${selectedVehicle} not found`, "warn");
+  isFetching = false;
+  return;
+}
+
+const candidate = dataArray[0];
+const fix = parseLatLon(candidate);
     if (!fix) {
       setStatus(`Vehicle ${selectedVehicle} has invalid coords`, "warn");
       console.log("Candidate object:", candidate);
@@ -610,6 +614,7 @@ async function getVehicleDetails(vehicleregno) {
   </script>
 </body>
 </html>
+
 
 
 
