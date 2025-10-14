@@ -1,3 +1,7 @@
+<html>
+<title>Token</title>
+<body>
+<script>
 // token.js
 export async function fetchNewToken() {
   const tokenUrl = 'https://dsclitsapi.karnatakasmartcity.in/ITMSVehicleTripsUpdate/AuthenticateUser';
@@ -35,4 +39,6 @@ export async function fetchNewToken() {
 // Automatically refresh token every 1 hour
 setInterval(fetchNewToken, 60 * 60 * 1000); // 1 hour
 fetchNewToken(); // Initial token fetch
+</body>
+</html>
 
