@@ -93,7 +93,7 @@
       <option value="Ward3">Ward 3</option>
       <option value="Ward4">Ward 4</option>
     </select>
-    <input id="vehicleregno" placeholder="Vehicle #" readonly />
+    <input id="vehicleNumber" placeholder="Vehicle #" readonly />
   </div>
 
   <button id="recenterBtn" class="map-button" title="Recenter">⤵</button>
@@ -432,19 +432,19 @@ async function getVehicleDetails(vehicleregno) {
       });
 	  // Optional visual markers (your given points)
       const startPointGraphic = new Graphic({
-        geometry: new Point({ longitude: 75.902828, lattitude: 14.464268, spatialReference: { wkid: 4326 } }),
+        geometry: new Point({ longitude: 75.902828, latitude: 14.464268, spatialReference: { wkid: 4326 } }),
         symbol: { type: "simple-marker", color: "green", size: "8px" }
       });
       const endPointGraphic = new Graphic({
-        geometry: new Point({ longitude: 75.902769, lattitude: 14.463531, spatialReference: { wkid: 4326 } }),
+        geometry: new Point({ longitude: 75.902769, latitude: 14.463531, spatialReference: { wkid: 4326 } }),
         symbol: { type: "simple-marker", color: "red", size: "8px" }
       });
       const startPointGraphic2 = new Graphic({
-        geometry: new Point({ longitude: 75.909513, lattitude: 14.464849, spatialReference: { wkid: 4326 } }),
+        geometry: new Point({ longitude: 75.909513, latitude: 14.464849, spatialReference: { wkid: 4326 } }),
         symbol: { type: "simple-marker", color: "green", size: "8px" }
       });
       const endPointGraphic2 = new Graphic({
-        geometry: new Point({ longitude: 75.909792, lattitude: 14.465896, spatialReference: { wkid: 4326 } }),
+        geometry: new Point({ longitude: 75.909792, latitude: 14.465896, spatialReference: { wkid: 4326 } }),
         symbol: { type: "simple-marker", color: "red", size: "8px" }
       });
 
@@ -511,7 +511,7 @@ async function getVehicleDetails(vehicleregno) {
   if (isFetching) { console.log("Previous fetch still running — skipping this tick"); return; }
   isFetching = true;
   try {
-    const selectedVehicle = (vehicleregnoInput.value || "").trim();
+    const selectedVehicle = (vehicleNumberInput.value || "").trim();
     if (!selectedVehicle) {
       setStatus("No vehicle selected", "warn");
       isFetching = false;
@@ -538,7 +538,7 @@ async function getVehicleDetails(vehicleregno) {
 
     if (!vehicleGraphic) {
       vehicleGraphic = new Graphic({
-        geometry: new Point({ longitude: lon, lattitude: lat }),
+        geometry: new Point({ longitude: lon, latitude: lat }),
         symbol: {
           type: "picture-marker",
           url: "truck.png",
@@ -549,7 +549,7 @@ async function getVehicleDetails(vehicleregno) {
       });
       view.graphics.add(vehicleGraphic);
     } else {
-      vehicleGraphic.geometry = new Point({ longitude: lon, lattitude: lat });
+      vehicleGraphic.geometry = new Point({ longitude: lon, latitude: lat });
       vehicleGraphic.popupTemplate = { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` };
     }
 
@@ -610,6 +610,7 @@ async function getVehicleDetails(vehicleregno) {
   </script>
 </body>
 </html>
+
 
 
 
