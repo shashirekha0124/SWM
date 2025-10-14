@@ -110,7 +110,7 @@
 
       const REFRESH_MS = 15000; // 15 seconds refresh
     const PYTHON_SERVER_URL = "http://192.168.1.17:5000/get-token"; // ✅ Your Flask server
-    const API_BASE_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=";
+    const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=";
 
     // ✅ Fetch token from Python Flask server
     async function getTokenFromPython() {
@@ -138,7 +138,7 @@
         return null;
       }
 
-      const url = `${API_BASE_URL}?VehicleNo=${encodeURIComponent(vehicleNo)}&RequestToken=${encodeURIComponent(token)}`;
+      const url = `${API_URL}?VehicleNo=${encodeURIComponent(vehicleNo)}&RequestToken=${encodeURIComponent(token)}`;
       console.log("[API] Fetching:", url);
 
       try {
@@ -589,6 +589,7 @@
   </script>
 </body>
 </html>
+
 
 
 
