@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -112,46 +113,69 @@
     const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=";
 
     // ✅ Fetch token from Python Flask server
-    async function getTokenFromPython() {
-      try {
-        const res = await fetch(PYTHON_SERVER_URL);
-        const data = await res.json();
-        if (data.token) {
-          console.log("✅ Token received:", data.token);
-          return data.token;
-        } else {
-          console.warn("⚠️ Token fetch failed:", data);
-          return null;
-        }
-      } catch (err) {
-        console.error("❌ Error fetching token:", err);
-        return null;
-      }
+   const ROUTE_BUFFER_METERS = 50; // 50 meters, adjust as needed
+
+// 2️⃣ Fetch token safely
+async function getTokenFromPython() {
+  try {
+    const res = await fetch(PYTHON_SERVER_URL);
+    const text = await res.text();
+
+    // Ensure JSON parse safely
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch(e) {
+      console.warn("Token server returned non-JSON:", text);
+      return null;
     }
 
-    // ✅ Fetch vehicle data with token
-    async function getVehicleDetails(vehicleNo) {
-      const token = await getTokenFromPython();
-      if (!token) {
-        setStatus("Token not available", "warn");
-        return null;
-      }
-
-      const url = `${API_URL}?VehicleNo=${encodeURIComponent(vehicleNo)}&RequestToken=${encodeURIComponent(token)}`;
-      console.log("[API] Fetching:", url);
-
-      try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        console.log("[API] Vehicle data:", data);
-        return data;
-      } catch (err) {
-        console.error("[API] Error:", err);
-        setStatus("Vehicle API fetch failed", "warn");
-        return null;
-      }
+    if (data.token) {
+      console.log("✅ Token received:", data.token);
+      return data.token;
+    } else {
+      console.warn("⚠️ Token fetch failed:", data);
+      return null;
     }
+  } catch (err) {
+    console.error("❌ Error fetching token:", err);
+    return null;
+  }
+}
+
+// 3️⃣ Fetch vehicle data safely
+async function getVehicleDetails(vehicleNo) {
+  const token = await getTokenFromPython();
+  if (!token) {
+    setStatus("Token not available", "warn");
+    return null;
+  }
+
+  const url = `${API_URL}?VehicleNo=${encodeURIComponent(vehicleNo)}&RequestToken=${encodeURIComponent(token)}`;
+  console.log("[API] Fetching:", url);
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch(e) {
+      console.warn("[API] Vehicle API returned non-JSON:", text);
+      setStatus("Vehicle API invalid response", "warn");
+      return null;
+    }
+
+    console.log("[API] Vehicle data:", data);
+    return data;
+  } catch (err) {
+    console.error("[API] Error:", err);
+    setStatus("Vehicle API fetch failed", "warn");
+    return null;
+  }
+}
       // UI handles
       const statusBar = document.getElementById("statusBar");
       const recenterBtn = document.getElementById("recenterBtn");
@@ -586,6 +610,7 @@
   </script>
 </body>
 </html>
+
 
 
 
