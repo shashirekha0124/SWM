@@ -151,7 +151,7 @@ async function getVehicleDetails(vehicleNo) {
     return null;
   }
 
-  const url = `${API_URL}?VehicleNo=${encodeURIComponent(vehicleNo)}&RequestToken=${encodeURIComponent(token)}`;
+  const url = `${API_URL}?vehicleregno=${encodeURIComponent(vehicleNo)}&RequestToken=${encodeURIComponent(token)}`;
   console.log("[API] Fetching:", url);
 
   try {
@@ -610,6 +610,7 @@ async function getVehicleDetails(vehicleNo) {
   </script>
 </body>
 </html>
+
 
 
 
