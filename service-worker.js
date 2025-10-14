@@ -2,7 +2,8 @@ const CACHE_NAME = 'garbage-mon-v1';
 const urlsToCache = [
   '/SWM/',
   '/SWM/index.html',
-  '/SWM/token.js',
+  '/SWM/My_token.py',
+  '/SWM/token_server.py',
   '/SWM/icon-192.png',
   '/SWM/icon-512.png',
   '/SWM/truck.png'
@@ -36,5 +37,6 @@ self.addEventListener('fetch', event => {
     })
   );
 });
+
 
 
