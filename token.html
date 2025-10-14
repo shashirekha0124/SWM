@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Token Generator</title>
+</head>
+<body style="font-family: Arial; background: #f9f9f9; text-align: center; padding: 50px;">
+  <h2>🔐 Token Generator</h2>
+  <p id="status">Fetching new token...</p>
+  <div id="tokenBox" style="margin-top: 20px; padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 0 5px #ccc; display: inline-block; max-width: 80%; word-break: break-all;"></div>
+
+  <script>
+    async function fetchNewToken() {
+      const tokenUrl = 'https://dsclitsapi.karnatakasmartcity.in/ITMSVehicleTripsUpdate/AuthenticateUser';
+      const statusEl = document.getElementById('status');
+      const tokenBox = document.getElementById('tokenBox');
+
+      statusEl.textContent = '⏳ Fetching new token...';
+      tokenBox.textContent = '';
+
+      try {
+        const response = await fetch(tokenUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            strUserName: "itms",
+            strPassword: "Itms@123",
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const token = data?.token || data?.access_token || JSON.stringify(data);
+
+        if (token) {
+          localStorage.setItem('authToken', token);
+          statusEl.textContent = '✅ Token generated successfully';
+          tokenBox.textContent = token;
+          console.log('✅ New Token:', token);
+        } else {
+          statusEl.textContent = '⚠️ Token not found in response';
+          tokenBox.textContent = JSON.stringify(data, null, 2);
+        }
+      } catch (error) {
+        statusEl.textContent = '❌ Error fetching token';
+        tokenBox.textContent = error;
+        console.error('⚠️ Token fetch error:', error);
+      }
+    }
+
+    // Fetch token immediately on page load
+    fetchNewToken();
+
+    // Automatically refresh token every 1 hour
+    setInterval(fetchNewToken, 60 * 60 * 1000);
+  </script>
+</body>
+</html>
