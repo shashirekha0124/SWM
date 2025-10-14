@@ -6,7 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/light/main.css">
 	<link rel="manifest" href="manifest.json">
-	<script type="module" src="token.js"></script>
   <script src="https://js.arcgis.com/4.29/"></script>
  <style>
     html, body {
@@ -109,39 +108,51 @@
       "esri/Graphic", "esri/geometry/geometryEngine"
     ], function (Map, MapView, Point, Polygon, Polyline, Graphic, geometryEngine) {
 
-      // --- CONFIG: set correct API URL / token here ---
-     // main.js
-import { ensureValidToken } from './token.js';
+      const REFRESH_MS = 15000; // 15 seconds refresh
+    const PYTHON_SERVER_URL = "http://192.168.1.17:5000/get-token"; // ✅ Your Flask server
+    const API_BASE_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=";
 
-const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=";
+    // ✅ Fetch token from Python Flask server
+    async function getTokenFromPython() {
+      try {
+        const res = await fetch(PYTHON_SERVER_URL);
+        const data = await res.json();
+        if (data.token) {
+          console.log("✅ Token received:", data.token);
+          return data.token;
+        } else {
+          console.warn("⚠️ Token fetch failed:", data);
+          return null;
+        }
+      } catch (err) {
+        console.error("❌ Error fetching token:", err);
+        return null;
+      }
+    }
 
-/**
- * Fetch vehicle details using GET method
- */
-async function getVehicleDetails(vehicleNo) {
-  const token = await ensureValidToken();
+    // ✅ Fetch vehicle data with token
+    async function getVehicleDetails(vehicleNo) {
+      const token = await getTokenFromPython();
+      if (!token) {
+        setStatus("Token not available", "warn");
+        return null;
+      }
 
-  try {
-    const url = `${API_URL}?VehicleNo=${encodeURIComponent(vehicleNo)}&RequestToken=${encodeURIComponent(token)}`;
+      const url = `${API_BASE_URL}?VehicleNo=${encodeURIComponent(vehicleNo)}&RequestToken=${encodeURIComponent(token)}`;
+      console.log("[API] Fetching:", url);
 
-    console.log("[API] Fetching data from:", url);
-
-    const res = await fetch(url, { method: "GET" });
-
-    if (!res.ok) throw new Error(`API Error: ${res.status}`);
-
-    const data = await res.json();
-    console.log("[API] ✅ Vehicle data:", data);
-    return data;
-  } catch (err) {
-    console.error("[API] ❌ Error fetching vehicle data:", err);
-    return null;
-  }
-}
-
-export { getVehicleDetails };
-
-
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        console.log("[API] Vehicle data:", data);
+        return data;
+      } catch (err) {
+        console.error("[API] Error:", err);
+        setStatus("Vehicle API fetch failed", "warn");
+        return null;
+      }
+    }
       // UI handles
       const statusBar = document.getElementById("statusBar");
       const recenterBtn = document.getElementById("recenterBtn");
@@ -578,6 +589,7 @@ export { getVehicleDetails };
   </script>
 </body>
 </html>
+
 
 
 
