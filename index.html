@@ -2,83 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>SWM Driver App</title>
+  <title>SWM Driver App — Multi Ward</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/light/main.css">
-	<link rel="manifest" href="manifest.json">
   <script src="https://js.arcgis.com/4.29/"></script>
- <style>
-    html, body {
-      height: 100%;
-      width: 100%;
-      margin: 0;
-      padding: 0;
-      font-family: Arial, sans-serif;
-      background: #f0f0f0;
-    }
-
-    #viewDiv {
-      height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-      width: 100vw;
-      position: absolute;
-      top: env(safe-area-inset-top);
-      left: 0;
-      right: 0;
-      bottom: env(safe-area-inset-bottom);
-    }
-
-    .floating-panel {
-      position: absolute;
-      top: env(safe-area-inset-top, 10px);
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(255, 255, 255, 0.95);
-      padding: 8px 12px;
-      border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-      z-index: 10;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      max-width: 90vw;
-    }
-
-    .floating-panel select,
-    .floating-panel input {
-      padding: 6px;
-      font-size: 14px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      flex: 1 1 auto;
-      min-width: 100px;
-    }
-
-    .floating-panel label {
-      font-size: 14px;
-      font-weight: bold;
-      white-space: nowrap;
-    }
-
-    #statusBar {
-      position: absolute;
-      bottom: env(safe-area-inset-bottom, 10px);
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0,0,0,0.7);
-      color: white;
-      padding: 8px 12px;
-      border-radius: 12px;
-      font-size: 0.9rem;
-      max-width: 90vw;
-      white-space: normal;
-      word-break: break-word;
-      text-align: center;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-    }
-
-    .status-ok { background: green; }
-    .status-warn { background: orange; }
-    .status-alert { background: red; }
+  <style>
+    html, body { height:100%; width:100%; margin:0; padding:0; font-family: Arial, sans-serif; background:#f0f0f0; }
+    #viewDiv { height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); width:100vw; position:absolute; top:env(safe-area-inset-top); left:0; right:0; bottom:env(safe-area-inset-bottom); }
+    .floating-panel { position:absolute; top:env(safe-area-inset-top,10px); left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); padding:8px 12px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.2); z-index:10; display:flex; gap:8px; align-items:center; max-width:90vw; }
+    .floating-panel select, .floating-panel input { padding:6px; font-size:14px; border:1px solid #ccc; border-radius:6px; min-width:130px; }
+    #recenterBtn { position:absolute; top:80px; right:12px; z-index:12; padding:8px; border-radius:8px; background:white; box-shadow:0 2px 6px rgba(0,0,0,0.15); border:none; cursor:pointer; }
+    #statusBar { position:absolute; bottom: env(safe-area-inset-bottom,10px); left:50%; transform:translateX(-50%); background: rgba(0,0,0,0.7); color:white; padding:8px 12px; border-radius:12px; font-size:0.9rem; max-width:90vw; text-align:center; z-index:11; }
+    .ok { background:green; } .warn { background:orange; } .alert { background:red; }
   </style>
 </head>
 <body>
@@ -93,473 +28,500 @@
       <option value="Ward3">Ward 3</option>
       <option value="Ward4">Ward 4</option>
     </select>
+
+    <label for="vehicleNumber">Vehicle</label>
     <input id="vehicleNumber" placeholder="Vehicle #" readonly />
+
+    <button id="refreshNow" title="Refresh">Refresh</button>
   </div>
 
-  <button id="recenterBtn" class="map-button" title="Recenter">⤵</button>
+  <button id="recenterBtn" title="Recenter">⤵</button>
 
   <div id="statusBar" class="ok">Status: ready</div>
 
-  <script>
-    const REFRESH_MS = 15000; // 15s
-    require([
-      "esri/Map", "esri/views/MapView",
-      "esri/geometry/Point", "esri/geometry/Polygon", "esri/geometry/Polyline",
-      "esri/Graphic", "esri/geometry/geometryEngine"
-    ], function (Map, MapView, Point, Polygon, Polyline, Graphic, geometryEngine) {
+<script>
+const REFRESH_MS = 15000; // 15s
+require([
+  "esri/Map", "esri/views/MapView",
+  "esri/geometry/Point", "esri/geometry/Polygon", "esri/geometry/Polyline",
+  "esri/Graphic", "esri/geometry/geometryEngine"
+], function (Map, MapView, Point, Polygon, Polyline, Graphic, geometryEngine) {
 
-      // --- CONFIG: set correct API URL / token here ---
-      const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=N3luemowOGpoN0NNd05uaWo3UmU2alhHdVlYSzJUSWM3ZnpNMUtSMndDaz0kaXRtcyQxNS0xMC0yMDI1IDEyOjI0OjIz";
-      const ROUTE_BUFFER_METERS = 25;
+  // --- CONFIG: set correct API URL / token here ---
+  const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=THVQNmxUVlRCU1RGVU4zMURkZHNPbFBnMXVOZ09UWEx1bUs2OUE4dWg3OD0kaXRtcyQxNS0xMC0yMDI1IDEyOjQ5OjUz";
+  const ROUTE_BUFFER_METERS = 25;
 
-      // UI handles
-      const statusBar = document.getElementById("statusBar");
-      const recenterBtn = document.getElementById("recenterBtn");
-      const wardSelect = document.getElementById("wardSelect");
-      const vehicleNumberInput = document.getElementById("vehicleNumber");
+  const statusBar = document.getElementById("statusBar");
+  const recenterBtn = document.getElementById("recenterBtn");
+  const wardSelect = document.getElementById("wardSelect");
+  const vehicleNumberInput = document.getElementById("vehicleNumber");
+  const refreshNowBtn = document.getElementById("refreshNow");
 
-      // map-to-vehicle mapping
-      const wardToVehicle = {
-        "Ward22-A": "KA-17-D-5186",
-        "Ward22-B": "KA-17-D-9394",
-        "Ward3": "KA-03-9012",
-        "Ward4": "KA-04-3456"
-      };
+  const wardToVehicle = {
+    "Ward22-A": "KA-17-D-5186",
+    "Ward22-B": "KA-17-D-9394",
+    "Ward3": "KA-03-9012",
+    "Ward4": "KA-04-3456"
+  };
 
-      // helper: set status
-      function setStatus(text, level="ok") {
-        statusBar.className = level;
-        statusBar.textContent = "Status: " + text;
-        console.log("[STATUS]", text);
-      }
+  function setStatus(text, level="ok") {
+    statusBar.className = level;
+    statusBar.textContent = "Status: " + text;
+    console.log("[STATUS]", text);
+  }
 
-      // helpers for flexible API field detection
-      function getAny(obj, keys) {
-        for (const k of keys) {
-          if (obj && obj[k] !== undefined && obj[k] !== null && obj[k] !== "") return obj[k];
-        }
-        return undefined;
-      }
-      const normalizePlate = s => (s || "").toString().toUpperCase().replace(/[^A-Z0-9]/g, "");
-      function parseLatLon(v) {
-        if (!v) return null;
-        let lat = getAny(v, ["latitude","Latitude","lat","Lat","LATITUDE","lattitude","LATTITUDE"]);
-        let lon = getAny(v, ["longitude","Longitude","lon","Lon","LONGITUDE","lng","Lng","LONG"]);
-        lat = parseFloat(lat); lon = parseFloat(lon);
-        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-        // sometimes lat/lon swapped:
-        if (Math.abs(lat) > 90 && Math.abs(lon) <= 90) {
-          const t = lat; lat = lon; lon = t;
-        }
-        if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180) return { lat, lon };
-        return null;
-      }
+  // flexible helpers
+  function getAny(obj, keys) {
+    for (const k of keys) if (obj && obj[k] !== undefined && obj[k] !== null && obj[k] !== "") return obj[k];
+    return undefined;
+  }
+  const normalizePlate = s => (s || "").toString().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  function parseLatLon(v) {
+    if (!v) return null;
+    let lat = getAny(v, ["latitude","Latitude","lat","Lat","LATITUDE","lattitude","LATTITUDE"]);
+    let lon = getAny(v, ["longitude","Longitude","lon","Lon","LONGITUDE","lng","Lng","LONG"]);
+    lat = parseFloat(lat); lon = parseFloat(lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    if (Math.abs(lat) > 90 && Math.abs(lon) <= 90) { const t = lat; lat = lon; lon = t; }
+    if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180) return { lat, lon };
+    return null;
+  }
 
-      // --- MAP SETUP ---
-      const map = new Map({ basemap: "streets-navigation-vector" });
-      const view = new MapView({
-        container: "viewDiv",
-        map,
-        center: [75.9063, 14.4634],
-        zoom: 14
-      });
+  // --- Map Initialization ---
+  const map = new Map({ basemap: "streets-navigation-vector" });
+  const view = new MapView({ container: "viewDiv", map, center: [75.9063, 14.4634], zoom: 14 });
 
-      // --- Ward polygon & routes (copied from your original) ---
-      const ward1Polygon = new Polygon({
-        rings: [[
-          [75.906312929997796,14.463494624976988],
-          [75.905324698276274,14.463450586975057],
-          [75.903882580516722,14.463468088681395],
-          [75.902601618569918,14.463473004375714],
-          [75.902626595441063,14.464444040160402],
-          [75.902654891709915,14.46537203169396],
-          [75.902690052503999,14.465572729797714],
-          [75.90404186843756,14.465616733625382],
-          [75.904989430118178,14.465617875764394],
-          [75.905493117913124,14.465695689604445],
-          [75.906974742890156,14.465943957347804],
-          [75.908865791423182,14.466143742639645],
-          [75.909752029232834,14.465892203162696],
-          [75.909572466096506,14.465200411369949],
-          [75.909385555499057,14.464512234851782],
-          [75.909217260867933,14.463874218920125],
-          [75.909162297002467,14.463698644277088],
-          [75.908211658741095,14.463645776731255],
-          [75.907382864227884,14.463571232826212],
-          [75.906312929997796,14.463494624976988]
-        ]],
-        spatialReference: { wkid: 4326 }
-      });
+  // ----- GEOMETRIES (using exact coordinates you pasted) -----
 
-      const ward1Route1 = new Polyline({
-        paths: [[
-          [75.90283078201503,14.464255583628358],
-          [75.903439924313091,14.464265102052877],
-          [75.903953887761759,14.464265101153558],
-          [75.904106173561104,14.464255582728981],
-          [75.904248940935929,14.464265102052877],
-          [75.904800976284093,14.464331725628711],
-          [75.904943743658919,14.464331725628711],
-          [75.905314939732762,14.464322209002773],
-          [75.905914563606302,14.464303173053054],
-          [75.906104920405824,14.464312689678934],
-          [75.906637919804211,14.46435076247775],
-          [75.907256579627528,14.464398351902446],
-          [75.90777054307614,14.464436422902622],
-          [75.908018006825614,14.464484012327375],
-          [75.908332095949504,14.464541119277271],
-          [75.908712809548604,14.464579190277448],
-          [75.909141112572343,14.464636297227401],
-          [75.909274362421968,14.46463629812672],
-          [75.909414705224549,14.46461956624006],
-          [75.909474237646009,14.464607743752424],
-          [75.909417130696056,14.464426905377422],
-          [75.909331469371864,14.464436422902622],
-          [75.909122077521943,14.464398351003126],
-          [75.908332096848824,14.464246066103101],
-          [75.906656955753988,14.464103297828956],
-          [75.906504669954586,14.464084262778556],
-          [75.905857456656349,14.46404619087906],
-          [75.9057432427565,14.46404619177838],
-          [75.905333974783161,14.464112816253532],
-          [75.902792711014854,14.464103297828956],
-          [75.902783193489654,14.46373210265449],
-          [75.902887888964983,14.46374162017969],
-          [75.903506548788243,14.46374162017969],
-          [75.903630280213292,14.46375113770489],
-          [75.903792084437214,14.463779691179866],
-          [75.903963405286959,14.463789209604386],
-          [75.904629654534972,14.463789209604386],
-          [75.905372046682658,14.46374162017969],
-          [75.905543367532459,14.46375113770489],
-          [75.905866975080869,14.463760656129409],
-          [75.906552259379339,14.463798727129586],
-          [75.906780688078356,14.463817763079362],
-          [75.907437418901793,14.463874870029258],
-          [75.908027524350814,14.463931976979211],
-          [75.908503416799306,14.463979566403907],
-          [75.908912684772645,14.464027155828603],
-          [75.909036416197694,14.46403667335386],
-          [75.909302916796207,14.464093781203076],
-          [75.909179184471839,14.463684513229737],
-          [75.90907448719787,14.463703549179513],
-          [75.908351131899281,14.46364644222956],
-          [75.907684882651267,14.463608371229384],
-          [75.907113812252703,14.463551263380168],
-          [75.906428527054914,14.463503673955415],
-          [75.906190580830696,14.463494156430215],
-          [75.905886011030645,14.463484638005696],
-          [75.905533850906579,14.463456085430039],
-          [75.905067475983287,14.463446567005519],
-          [75.904953261184119,14.463446567005519],
-          [75.904753386859397,14.463465602055919],
-          [75.904610618585252,14.463475119581176],
-          [75.904020512236912,14.463484638905015],
-          [75.903573175062036,14.463494156430215],
-          [75.903192459664353,14.463494156430215],
-          [75.902783192590334,14.463522709905192]
-        ]],
-        spatialReference: { wkid: 4326 }
-      });
+  // Ward polygon (exact as provided)
+  const wardPolygon = new Polygon({
+    rings: [[
+      [75.906312929997796,14.463494624976988],
+      [75.905324698276274,14.463450586975057],
+      [75.903882580516722,14.463468088681395],
+      [75.902601618569918,14.463473004375714],
+      [75.902626595441063,14.464444040160402],
+      [75.902654891709915,14.46537203169396],
+      [75.902690052503999,14.465572729797714],
+      [75.90404186843756,14.465616733625382],
+      [75.904989430118178,14.465617875764394],
+      [75.905493117913124,14.465695689604445],
+      [75.906974742890156,14.465943957347804],
+      [75.908865791423182,14.466143742639645],
+      [75.909752029232834,14.465892203162696],
+      [75.909572466096506,14.465200411369949],
+      [75.909385555499057,14.464512234851782],
+      [75.909217260867933,14.463874218920125],
+      [75.909162297002467,14.463698644277088],
+      [75.908211658741095,14.463645776731255],
+      [75.907382864227884,14.463571232826212],
+      [75.906312929997796,14.463494624976988]
+    ]],
+    spatialReference: { wkid: 4326 }
+  });
 
-      const ward1Route2 = new Polyline({
-        paths: [[
-          [75.909512308646185,14.464845689976642],
-          [75.909302916796207,14.464912315351114],
-          [75.909169666946639,14.464940867926771],
-          [75.908912684772645,14.464912315351114],
-          [75.9087603989733,14.464883760976818],
-          [75.908560523749202,14.464883761876138],
-          [75.908427274798953,14.464864725926418],
-          [75.908217882049655,14.464826654026922],
-          [75.907713437025564,14.464740993602049],
-          [75.907580186276618,14.464721957652273],
-          [75.907380311951897,14.464693404177297],
-          [75.907199472677576,14.464674368227577],
-          [75.906866347603909,14.4646458147526],
-          [75.906685508329588,14.46463629812672],
-          [75.90643804458017,14.464626779702144],
-          [75.906085884456047,14.464598226227224],
-          [75.905914563606302,14.464598226227224],
-          [75.905705170857004,14.464579190277448],
-          [75.905590956957155,14.464569671852928],
-          [75.904905672658742,14.464579191176767],
-          [75.904620137909092,14.464579191176767],
-          [75.904172798935576,14.464579191176767],
-          [75.903744495012518,14.464579190277448],
-          [75.903306673564202,14.464569672752248],
-          [75.90281174696463,14.464579190277448],
-          [75.90281174696463,14.464864725926418],
-          [75.903268603463346,14.464874243451618],
-          [75.904020512236912,14.464864725027098],
-          [75.904391708310754,14.464864725926418],
-          [75.904810493809293,14.464864725926418],
-          [75.90513410045844,14.464864725926418],
-          [75.905505296532283,14.464864725027098],
-          [75.905771795332157,14.464864725027098],
-          [75.906019260880214,14.464874244350938],
-          [75.906285759680145,14.464893279401394],
-          [75.906628401379692,14.464921831976994],
-          [75.906961526453358,14.46495038635129],
-          [75.907294650627705,14.464978939826267],
-          [75.907637293226571,14.465026529250963],
-          [75.90805607872511,14.465083636200916],
-          [75.908427274798953,14.465121708100412],
-          [75.908636666648931,14.465178815050308],
-          [75.90866522102317,14.46536917095051],
-          [75.908950756672141,14.465283511424957],
-          [75.909312434321464,14.465188331676188],
-          [75.909559898070881,14.465121708100412],
-          [75.909588451545858,14.465131225625612],
-          [75.909648931852757,14.465383227354096],
-          [75.909702665445707,14.465607118074104],
-          [75.90966459444553,14.46565470570016],
-          [75.909188701997039,14.465778438024529],
-          [75.90906496967267,14.465787957348425],
-          [75.908903166348125,14.465797473974305],
-          [75.908560524648578,14.465768921398649],
-          [75.908417756374433,14.465759402974129],
-          [75.90775150802574,14.465635670649704],
-          [75.907618257276795,14.465616634699984],
-          [75.907208990202776,14.465569046174608],
-          [75.90675213370406,14.465530975174431],
-          [75.90615250983052,14.465473868224478],
-          [75.90584793823183,14.465435796324982],
-          [75.905514814057483,14.465407242850006],
-          [75.905372046682658,14.465388206900286],
-          [75.904943743658919,14.465359654324629],
-          [75.904582066009596,14.46534061837491],
-          [75.904429780210251,14.46534061837491],
-          [75.903877745761406,14.46534061837491],
-          [75.903363780514098,14.465331099950333],
-          [75.902964031864656,14.465331099950333],
-          [75.902849818864127,14.46535013500079],
-          [75.902811746065311,14.465093153726116],
-          [75.903163906189377,14.465112189675835],
-          [75.90354462068774,14.465112189675835],
-          [75.903868226437567,14.465112189675835],
-          [75.904277494410906,14.465112189675835],
-          [75.904762904384597,14.465112189675835],
-          [75.905505295632963,14.465140743150812],
-          [75.905724206806781,14.465150260676012],
-          [75.905990705606655,14.465159779100588],
-          [75.906352385054561,14.465188333474885],
-          [75.906571295329059,14.465207367625965],
-          [75.906837795028252,14.465226404475061],
-          [75.90706622282795,14.465245438626141],
-          [75.90736127690144,14.465273993000437],
-          [75.907532597751242,14.465293028950157],
-          [75.907818132500893,14.46534061837491],
-          [75.908027524350814,14.465378689375086],
-          [75.908284506524808,14.465397725324806],
-          [75.908531970274282,14.465416761274582],
-          [75.90866522102317,14.465445313850182],
-          [75.908722327973123,14.465550010224831],
-          [75.908760399872619,14.465597599649527],
-          [75.908903166348125,14.465569046174608],
-          [75.909198219522295,14.465502420800135],
-          [75.909540863020482,14.465407242850006],
-          [75.909648931852757,14.465383227354096],
-          [75.909712183870226,14.465369171849829],
-          [75.909778808345379,14.465683260074456],
-          [75.909807361820356,14.465883135298498]
-        ]],
-        spatialReference: { wkid: 4326 }
-      });
-	  // Optional visual markers (your given points)
-      const startPointGraphic = new Graphic({
-        geometry: new Point({ longitude: 75.902828, latitude: 14.464268, spatialReference: { wkid: 4326 } }),
-        symbol: { type: "simple-marker", color: "green", size: "8px" }
-      });
-      const endPointGraphic = new Graphic({
-        geometry: new Point({ longitude: 75.902769, latitude: 14.463531, spatialReference: { wkid: 4326 } }),
-        symbol: { type: "simple-marker", color: "red", size: "8px" }
-      });
-      const startPointGraphic2 = new Graphic({
-        geometry: new Point({ longitude: 75.909513, latitude: 14.464849, spatialReference: { wkid: 4326 } }),
-        symbol: { type: "simple-marker", color: "green", size: "8px" }
-      });
-      const endPointGraphic2 = new Graphic({
-        geometry: new Point({ longitude: 75.909792, latitude: 14.465896, spatialReference: { wkid: 4326 } }),
-        symbol: { type: "simple-marker", color: "red", size: "8px" }
-      });
+  // ROUTE 1 (large list — kept exactly as in original paste for route1)
+  const route1 = new Polyline({
+    paths: [[
+      [75.90283078201503,14.464255583628358],
+      [75.903439924313091,14.464265102052877],
+      [75.903953887761759,14.464265101153558],
+      [75.904106173561104,14.464255582728981],
+      [75.904248940935929,14.464265102052877],
+      [75.904800976284093,14.464331725628711],
+      [75.904943743658919,14.464331725628711],
+      [75.905314939732762,14.464322209002773],
+      [75.905914563606302,14.464303173053054],
+      [75.906104920405824,14.464312689678934],
+      [75.906637919804211,14.46435076247775],
+      [75.907256579627528,14.464398351902446],
+      [75.90777054307614,14.464436422902622],
+      [75.908018006825614,14.464484012327375],
+      [75.908332095949504,14.464541119277271],
+      [75.908712809548604,14.464579190277448],
+      [75.909141112572343,14.464636297227401],
+      [75.909274362421968,14.46463629812672],
+      [75.909414705224549,14.46461956624006],
+      [75.909474237646009,14.464607743752424],
+      [75.909417130696056,14.464426905377422],
+      [75.909331469371864,14.464436422902622],
+      [75.909122077521943,14.464398351003126],
+      [75.908332096848824,14.464246066103101],
+      [75.906656955753988,14.464103297828956],
+      [75.906504669954586,14.464084262778556],
+      [75.905857456656349,14.46404619087906],
+      [75.9057432427565,14.46404619177838],
+      [75.905333974783161,14.464112816253532],
+      [75.902792711014854,14.464103297828956],
+      [75.902783193489654,14.46373210265449],
+      [75.902887888964983,14.46374162017969],
+      [75.903506548788243,14.46374162017969],
+      [75.903630280213292,14.46375113770489],
+      [75.903792084437214,14.463779691179866],
+      [75.903963405286959,14.463789209604386],
+      [75.904629654534972,14.463789209604386],
+      [75.905372046682658,14.46374162017969],
+      [75.905543367532459,14.46375113770489],
+      [75.905866975080869,14.463760656129409],
+      [75.906552259379339,14.463798727129586],
+      [75.906780688078356,14.463817763079362],
+      [75.907437418901793,14.463874870029258],
+      [75.908027524350814,14.463931976979211],
+      [75.908503416799306,14.463979566403907],
+      [75.908912684772645,14.464027155828603],
+      [75.909036416197694,14.46403667335386],
+      [75.909302916796207,14.464093781203076],
+      [75.909179184471839,14.463684513229737],
+      [75.90907448719787,14.463703549179513],
+      [75.908351131899281,14.46364644222956],
+      [75.907684882651267,14.463608371229384],
+      [75.907113812252703,14.463551263380168],
+      [75.906428527054914,14.463503673955415],
+      [75.906190580830696,14.463494156430215],
+      [75.905886011030645,14.463484638005696],
+      [75.905533850906579,14.463456085430039],
+      [75.905067475983287,14.463446567005519],
+      [75.904953261184119,14.463446567005519],
+      [75.904753386859397,14.463465602055919],
+      [75.904610618585252,14.463475119581176],
+      [75.904020512236912,14.463484638905015],
+      [75.903573175062036,14.463494156430215],
+      [75.903192459664353,14.463494156430215],
+      [75.902783192590334,14.463522709905192]
+    ]],
+    spatialReference: { wkid: 4326 }
+  });
 
-      // graphics
-      const wardFillGraphic = new Graphic({
-        geometry: ward1Polygon,
-        symbol: { type: "simple-fill", color: [227,139,79,0.12], outline: { color: [227,139,79,0.7], width: 1 } }
-      });
-      const routeLineGraphic1 = new Graphic({ geometry: ward1Route1, symbol: { type: "simple-line", color: [40,98,228], width: 3 } });
-      const routeLineGraphic2 = new Graphic({ geometry: ward1Route2, symbol: { type: "simple-line", color: [40,98,228], width: 3 }});
+  // ROUTE 2 (the second long list — exactly as pasted)
+  const route2 = new Polyline({
+    paths: [[
+      [75.909512308646185,14.464845689976642],
+      [75.909302916796207,14.464912315351114],
+      [75.909169666946639,14.464940867926771],
+      [75.908912684772645,14.464912315351114],
+      [75.9087603989733,14.464883760976818],
+      [75.908560523749202,14.464883761876138],
+      [75.908427274798953,14.464864725926418],
+      [75.908217882049655,14.464826654026922],
+      [75.907713437025564,14.464740993602049],
+      [75.907580186276618,14.464721957652273],
+      [75.907380311951897,14.464693404177297],
+      [75.907199472677576,14.464674368227577],
+      [75.906866347603909,14.4646458147526],
+      [75.906685508329588,14.46463629812672],
+      [75.90643804458017,14.464626779702144],
+      [75.906085884456047,14.464598226227224],
+      [75.905914563606302,14.464598226227224],
+      [75.905705170857004,14.464579190277448],
+      [75.905590956957155,14.464569671852928],
+      [75.904905672658742,14.464579191176767],
+      [75.904620137909092,14.464579191176767],
+      [75.904172798935576,14.464579191176767],
+      [75.903744495012518,14.464579190277448],
+      [75.903306673564202,14.464569672752248],
+      [75.90281174696463,14.464579190277448],
+      [75.90281174696463,14.464864725926418],
+      [75.903268603463346,14.464874243451618],
+      [75.904020512236912,14.464864725027098],
+      [75.904391708310754,14.464864725926418],
+      [75.904810493809293,14.464864725926418],
+      [75.90513410045844,14.464864725926418],
+      [75.905505296532283,14.464864725027098],
+      [75.905771795332157,14.464864725027098],
+      [75.906019260880214,14.464874244350938],
+      [75.906285759680145,14.464893279401394],
+      [75.906628401379692,14.464921831976994],
+      [75.906961526453358,14.46495038635129],
+      [75.907294650627705,14.464978939826267],
+      [75.907637293226571,14.465026529250963],
+      [75.90805607872511,14.465083636200916],
+      [75.908427274798953,14.465121708100412],
+      [75.908636666648931,14.465178815050308],
+      [75.90866522102317,14.46536917095051],
+      [75.908950756672141,14.465283511424957],
+      [75.909312434321464,14.465188331676188],
+      [75.909559898070881,14.465121708100412],
+      [75.909588451545858,14.465131225625612],
+      [75.909648931852757,14.465383227354096],
+      [75.909702665445707,14.465607118074104],
+      [75.90966459444553,14.46565470570016],
+      [75.909188701997039,14.465778438024529],
+      [75.90906496967267,14.465787957348425],
+      [75.908903166348125,14.465797473974305],
+      [75.908560524648578,14.465768921398649],
+      [75.908417756374433,14.465759402974129],
+      [75.90775150802574,14.465635670649704],
+      [75.907618257276795,14.465616634699984],
+      [75.907208990202776,14.465569046174608],
+      [75.90675213370406,14.465530975174431],
+      [75.90615250983052,14.465473868224478],
+      [75.90584793823183,14.465435796324982],
+      [75.905514814057483,14.465407242850006],
+      [75.905372046682658,14.465388206900286],
+      [75.904943743658919,14.465359654324629],
+      [75.904582066009596,14.46534061837491],
+      [75.904429780210251,14.46534061837491],
+      [75.903877745761406,14.46534061837491],
+      [75.903363780514098,14.465331099950333],
+      [75.902964031864656,14.465331099950333],
+      [75.902849818864127,14.46535013500079],
+      [75.902811746065311,14.465093153726116],
+      [75.903163906189377,14.465112189675835],
+      [75.90354462068774,14.465112189675835],
+      [75.903868226437567,14.465112189675835],
+      [75.904277494410906,14.465112189675835],
+      [75.904762904384597,14.465112189675835],
+      [75.905505295632963,14.465140743150812],
+      [75.905724206806781,14.465150260676012],
+      [75.905990705606655,14.465159779100588],
+      [75.906352385054561,14.465188333474885],
+      [75.906571295329059,14.465207367625965],
+      [75.906837795028252,14.465226404475061],
+      [75.90706622282795,14.465245438626141],
+      [75.90736127690144,14.465273993000437],
+      [75.907532597751242,14.465293028950157],
+      [75.907818132500893,14.46534061837491],
+      [75.908027524350814,14.465378689375086],
+      [75.908284506524808,14.465397725324806],
+      [75.908531970274282,14.465416761274582],
+      [75.90866522102317,14.465445313850182],
+      [75.908722327973123,14.465550010224831],
+      [75.908760399872619,14.465597599649527],
+      [75.908903166348125,14.465569046174608],
+      [75.909198219522295,14.465502420800135],
+      [75.909540863020482,14.465407242850006],
+      [75.909648931852757,14.465383227354096],
+      [75.909712183870226,14.465369171849829],
+      [75.909778808345379,14.465683260074456],
+      [75.909807361820356,14.465883135298498]
+    ]],
+    spatialReference: { wkid: 4326 }
+  });
 
-      view.graphics.addMany([wardFillGraphic, routeLineGraphic1, routeLineGraphic2]);
+  // ----- Start/End points for each route (approx from your original) -----
+  const start1 = new Graphic({
+    geometry: new Point({ longitude: 75.902828, latitude: 14.464268, spatialReference: { wkid: 4326 } }),
+    symbol: { type: "simple-marker", color: "green", size: 10, outline: { color: [255,255,255], width: 1 } }
+  });
+  const end1 = new Graphic({
+    geometry: new Point({ longitude: 75.902769, latitude: 14.463531, spatialReference: { wkid: 4326 } }),
+    symbol: { type: "simple-marker", color: "red", size: 10, outline: { color: [255,255,255], width: 1 } }
+  });
 
-      // Build corridor buffer & merged buffer (geodesic)
-      let mergedRouteBuffer = null;
-      try {
-        const routeBuffer1 = geometryEngine.geodesicBuffer(ward1Route1, ROUTE_BUFFER_METERS, "meters");
-        const routeBuffer2 = geometryEngine.geodesicBuffer(ward1Route2, ROUTE_BUFFER_METERS, "meters");
-        mergedRouteBuffer = geometryEngine.union([routeBuffer1, routeBuffer2]);
-        const routeBufferGraphic = new Graphic({
-          geometry: mergedRouteBuffer,
-          symbol: { type: "simple-fill", color: [40,98,228,0.06], outline: { color: [40,98,228,0.4], width: 1 } }
-        });
-        view.graphics.add(routeBufferGraphic);
-      } catch (e) {
-        console.warn("Could not build route buffer:", e);
-      }
+  const start2 = new Graphic({
+    geometry: new Point({ longitude: 75.909513, latitude: 14.464849, spatialReference: { wkid: 4326 } }),
+    symbol: { type: "simple-marker", color: "green", size: 10, outline: { color: [255,255,255], width: 1 } }
+  });
+  const end2 = new Graphic({
+    geometry: new Point({ longitude: 75.909792, latitude: 14.465896, spatialReference: { wkid: 4326 } }),
+    symbol: { type: "simple-marker", color: "red", size: 10, outline: { color: [255,255,255], width: 1 } }
+  });
 
-      // vehicle marker
-      let vehicleGraphic = null;
-      let firstGoToDone = false;
-      let isFetching = false;
+  // Visual styling
+  const fillSymbol = { type: "simple-fill", color: [227,139,79,0.12], outline: { color: [227,139,79,0.7], width: 1 } };
+  const routeSymbol = { type: "simple-line", color: [40,98,228], width: 3 };
+  const bufferSymbol = { type: "simple-fill", color: [40,98,228,0.06], outline: { color: [40,98,228,0.4], width: 1 } };
 
-      wardSelect.addEventListener("change", () => {
-        const ward = wardSelect.value;
-        vehicleNumberInput.value = ward ? (wardToVehicle[ward] || "") : "";
-        // zoom to ward polygon for now (only ward1 exists)
-        try { view.goTo(ward1Polygon.extent.expand(1.1)); } catch(e){ console.warn(e); }
-      });
+  // Graphics for Ward22-A (polygon + route1)
+  const wardA_fill = new Graphic({ geometry: wardPolygon, symbol: fillSymbol });
+  const wardA_route = new Graphic({ geometry: route1, symbol: routeSymbol });
+  const wardA_buffer = new Graphic({
+    geometry: geometryEngine.union([ geometryEngine.geodesicBuffer(route1, ROUTE_BUFFER_METERS, "meters") ]),
+    symbol: bufferSymbol
+  });
+  const wardA_start = start1, wardA_end = end1;
 
-      recenterBtn.addEventListener("click", () => {
-        if (vehicleGraphic && vehicleGraphic.geometry) {
-          view.goTo({ center: vehicleGraphic.geometry, zoom: 17 });
-        } else {
-          view.goTo({ center: [75.9063,14.4634], zoom: 14 });
-        }
-      });
+  // Graphics for Ward22-B (use same polygon + route2)
+  const wardB_fill = new Graphic({ geometry: wardPolygon, symbol: fillSymbol });
+  const wardB_route = new Graphic({ geometry: route2, symbol: routeSymbol });
+  const wardB_buffer = new Graphic({
+    geometry: geometryEngine.union([ geometryEngine.geodesicBuffer(route2, ROUTE_BUFFER_METERS, "meters") ]),
+    symbol: bufferSymbol
+  });
+  const wardB_start = start2, wardB_end = end2;
 
-      // find candidate with flexible field names:
-      function findVehicleInApi(dataArray, targetPlate) {
-        if (!Array.isArray(dataArray)) return null;
-        const plateKeys = ["vehicleregno","vehicleRegNo","vehicleRegNumber","VehicleRegNo","VehicleRegNumber","VehicleNo","VehicleNumber","regno","RegNo"];
-        return dataArray.find(v => {
-          for (const k of plateKeys) {
-            if (v && v[k]) {
-              if (normalizePlate(v[k]) === targetPlate) return true;
-            }
-          }
-          return false;
-        });
-      }
+  // Placeholders for Ward3 and Ward4 (empty for now)
+  const ward3_fill = null;
+  const ward4_fill = null;
 
-      async function loadVehicle() {
-        if (isFetching) { console.log("Previous fetch still running — skipping this tick"); return; }
-        isFetching = true;
-        try {
-          console.log("Fetching vehicle data from:", API_URL);
-          const res = await fetch(API_URL, { cache: "no-store" });
-          if (!res.ok) {
-            setStatus(`API error ${res.status}`, "warn");
-            console.error("API response not OK:", res.status, await res.text());
-            isFetching = false;
-            return;
-          }
-          const data = await res.json();
-          console.log("API response length:", Array.isArray(data) ? data.length : "not-array", data);
+  // store by ward for easy toggling
+  const wardGraphics = {
+    "Ward22-A": [wardA_fill, wardA_route, wardA_buffer, wardA_start, wardA_end],
+    "Ward22-B": [wardB_fill, wardB_route, wardB_buffer, wardB_start, wardB_end],
+    "Ward3": [], "Ward4": []
+  };
 
-          const selectedVehicle = (vehicleNumberInput.value || "").trim();
-          if (!selectedVehicle) { setStatus("No vehicle selected", "warn"); isFetching = false; return; }
-          const targetNorm = normalizePlate(selectedVehicle);
+  // Add nothing initially; we'll add on ward selection
+  let vehicleGraphic = null;
+  let deviationGraphic = null;
+  let firstGoToDone = false;
+  let isFetching = false;
+  let intervalId = null;
 
-          const candidate = findVehicleInApi(data, targetNorm);
-          if (!candidate) { setStatus(`Vehicle ${selectedVehicle} not found`, "warn"); isFetching = false; return; }
-
-          const fix = parseLatLon(candidate);
-          if (!fix) { setStatus(`Vehicle ${selectedVehicle} has invalid coords`, "warn"); console.log("Candidate object:", candidate); isFetching = false; return; }
-          const { lat, lon } = fix;
-
-          // create or update vehicleGraphic
-          if (!vehicleGraphic) {
-            vehicleGraphic = new Graphic({
-              geometry: new Point({ longitude: lon, latitude: lat }),
-              symbol: {
-                type: "picture-marker",
-                url: "truck.png", // ensure this path exists & is accessible
-                width: "36px",
-                height: "36px"
-              },
-              popupTemplate: { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` }
-            });
-            view.graphics.add(vehicleGraphic);
-          } else {
-            // update geometry & popup
-            vehicleGraphic.geometry = new Point({ longitude: lon, latitude: lat });
-            vehicleGraphic.popupTemplate = { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` };
-          }
-
-          if (!firstGoToDone) {
-            try { view.goTo({ center: [lon, lat], zoom: 17 }); } catch(e){ console.warn(e); }
-            firstGoToDone = true;
-          }
-
-          // deviation checks
-          checkDeviationAndUpdateStatus();
-
-          isFetching = false;
-        } catch (err) {
-          console.error("Fetch failed:", err);
-          setStatus("Vehicle API fetch error", "warn");
-          isFetching = false;
-        }
-      }
-
-      function checkDeviationAndUpdateStatus() {
-        if (!vehicleGraphic || !vehicleGraphic.geometry) return;
-        const p = vehicleGraphic.geometry;
-        let insideWard = false, onCorridor = false;
-        try {
-          insideWard = geometryEngine.contains(ward1Polygon, p);
-        } catch(e){ console.warn("geometryEngine.contains ward check failed:", e); }
-        try {
-          if (mergedRouteBuffer) onCorridor = geometryEngine.contains(mergedRouteBuffer, p);
-        } catch(e){ console.warn("geometryEngine.contains buffer check failed:", e); }
-
-        if (!insideWard && !onCorridor) {
-          setStatus("ROUTE DEVIATION: outside ward & route corridor!", "alert");
-        } else if (!insideWard && onCorridor) {
-          setStatus("On route but outside ward boundary", "warn");
-        } else if (insideWard && !onCorridor) {
-          setStatus(`Off route (> ${ROUTE_BUFFER_METERS} m)`, "warn");
-        } else {
-          setStatus("On route within ward ✅", "ok");
-        }
-      }
-
-      // Start
-      view.when(() => {
-        try { view.goTo(ward1Polygon.extent.expand(1.1)); } catch(e){ console.warn(e); }
-        setStatus("Map ready — tracking started");
-        loadVehicle();
-        // keep one interval running
-        setInterval(loadVehicle, REFRESH_MS);
-      });
-
-    }); // require end
-
-    // Service worker — leave as-is but watch console output if registration fails
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./service-worker.js')
-          .then(reg => console.log("Service Worker registered:", reg.scope))
-          .catch(err => console.warn("Service Worker registration failed:", err));
-      });
+  wardSelect.addEventListener("change", () => {
+    const ward = wardSelect.value;
+    // set vehicle number for selected ward
+    vehicleNumberInput.value = ward ? (wardToVehicle[ward] || "") : "";
+    // clear map graphics and re-add only selected ward's graphics
+    view.graphics.removeAll();
+    // add only the selected ward graphics
+    if (ward && wardGraphics[ward]) {
+      view.graphics.addMany(wardGraphics[ward].filter(Boolean));
     }
-  </script>
+    // re-add vehicle if exists so the marker remains visible when ward selected
+    if (vehicleGraphic) view.graphics.add(vehicleGraphic);
+    // center/zoom to ward if available
+    if (ward && wardGraphics[ward] && wardGraphics[ward].length > 0) {
+      try {
+        // attempt to get polygon extent (first item is fill)
+        const g = wardGraphics[ward][0];
+        if (g && g.geometry && g.geometry.extent) view.goTo(g.geometry.extent.expand(1.1));
+      } catch(e){ console.warn("goTo failed:", e); }
+    }
+  });
+
+  recenterBtn.addEventListener("click", () => {
+    if (vehicleGraphic && vehicleGraphic.geometry) view.goTo({ center: vehicleGraphic.geometry, zoom: 17 });
+    else view.goTo({ center: [75.9063,14.4634], zoom: 14 });
+  });
+
+  refreshNowBtn.addEventListener("click", () => { loadVehicle(); });
+
+  function findVehicleInApi(dataArray, targetPlate) {
+    if (!Array.isArray(dataArray)) return null;
+    const plateKeys = ["vehicleregno","vehicleRegNo","vehicleRegNumber","VehicleRegNo","VehicleRegNumber","VehicleNo","VehicleNumber","regno","RegNo"];
+    return dataArray.find(v => {
+      for (const k of plateKeys) {
+        if (v && v[k]) {
+          if (normalizePlate(v[k]) === targetPlate) return true;
+        }
+      }
+      return false;
+    });
+  }
+
+  async function loadVehicle() {
+    if (isFetching) { console.log("fetch already running"); return; }
+    isFetching = true;
+    try {
+      console.log("Fetching vehicle data from:", API_URL);
+      const res = await fetch(API_URL, { cache: "no-store" });
+      if (!res.ok) { setStatus(`API error ${res.status}`, "warn"); isFetching = false; return; }
+      const data = await res.json();
+      console.log("API response:", data);
+
+      const selectedVehicle = (vehicleNumberInput.value || "").trim();
+      if (!selectedVehicle) { setStatus("No vehicle selected", "warn"); isFetching = false; return; }
+      const targetNorm = normalizePlate(selectedVehicle);
+      const candidate = findVehicleInApi(data, targetNorm);
+      if (!candidate) { setStatus(`Vehicle ${selectedVehicle} not found`, "warn"); isFetching = false; return; }
+
+      const fix = parseLatLon(candidate);
+      if (!fix) { setStatus(`Vehicle ${selectedVehicle} has invalid coords`, "warn"); console.log("Candidate:", candidate); isFetching = false; return; }
+
+      const { lat, lon } = fix;
+
+      // create or update vehicleGraphic
+      if (!vehicleGraphic) {
+        vehicleGraphic = new Graphic({
+          geometry: new Point({ longitude: lon, latitude: lat, spatialReference: { wkid: 4326 } }),
+          symbol: {
+            type: "picture-marker",
+            url: "truck.png", // ensure exists or replace with URL
+            width: "36px",
+            height: "36px"
+          },
+          popupTemplate: { title: selectedVehicle, content: `Lat: ${lat}<br>Lon: ${lon}` }
+        });
+        view.graphics.add(vehicleGraphic);
+      } else {
+        vehicleGraphic.geometry = new Point({ longitude: lon, latitude: lat, spatialReference: { wkid: 4326 } });
+      }
+
+      if (!firstGoToDone) {
+        try { view.goTo({ center: [lon, lat], zoom: 17 }); } catch(e){ console.warn(e); }
+        firstGoToDone = true;
+      }
+
+      // run deviation logic for the currently selected ward
+      checkDeviationAndUpdateStatus();
+
+    } catch (err) {
+      console.error("Fetch failed:", err);
+      setStatus("Vehicle API fetch error", "warn");
+    } finally {
+      isFetching = false;
+    }
+  }
+
+  function checkDeviationAndUpdateStatus() {
+    if (!vehicleGraphic || !vehicleGraphic.geometry) return;
+    const p = vehicleGraphic.geometry;
+    const ward = wardSelect.value || "Ward22-A"; // default to Ward22-A if not selected
+    const graphics = wardGraphics[ward] || [];
+
+    // Remove previous deviation graphic
+    if (deviationGraphic) { view.graphics.remove(deviationGraphic); deviationGraphic = null; }
+
+    // Determine which route buffer to use (if any)
+    let bufferGeom = null, routeGeom = null, polyGeom = null;
+    if (ward === "Ward22-A") { bufferGeom = wardA_buffer.geometry; routeGeom = route1; polyGeom = wardPolygon; }
+    else if (ward === "Ward22-B") { bufferGeom = wardB_buffer.geometry; routeGeom = route2; polyGeom = wardPolygon; }
+    else { bufferGeom = null; routeGeom = null; polyGeom = null; }
+
+    let insidePoly = false, insideBuffer = false;
+    try { if (polyGeom) insidePoly = geometryEngine.contains(polyGeom, p); } catch(e){ console.warn(e); }
+    try { if (bufferGeom) insideBuffer = geometryEngine.contains(bufferGeom, p); } catch(e){ console.warn(e); }
+
+    if (!insidePoly && !insideBuffer) {
+      // nearest point on route to vehicle
+      try {
+        if (routeGeom) {
+          const nearest = geometryEngine.nearestCoordinate(routeGeom, p);
+          if (nearest && nearest.coordinate) {
+            const arrowLine = new Polyline({
+              paths: [[[p.longitude, p.latitude], [nearest.coordinate.x, nearest.coordinate.y]]],
+              spatialReference: { wkid: 4326 }
+            });
+            deviationGraphic = new Graphic({
+              geometry: arrowLine,
+              symbol: { type: "simple-line", color: [200,30,30], width: 3, style: "dash" }
+            });
+            view.graphics.add(deviationGraphic);
+          }
+        }
+      } catch(e){ console.warn("nearestCoordinate failed:", e); }
+
+      setStatus("ROUTE DEVIATION: outside ward & route corridor!", "alert");
+    } else if (!insidePoly && insideBuffer) {
+      setStatus("On route corridor but outside ward boundary", "warn");
+    } else if (insidePoly && !insideBuffer) {
+      setStatus(`Off route (> ${ROUTE_BUFFER_METERS} m)`, "warn");
+    } else {
+      setStatus("On route within ward ✅", "ok");
+    }
+  }
+
+  // Boot
+  view.when(() => {
+    setStatus("Map ready — select a ward");
+    // Optionally add Ward22-A on load
+    // view.graphics.addMany(wardGraphics["Ward22-A"]);
+    // Start interval only after a ward is selected and vehicle is set; but we will still start polling
+    loadVehicle();
+    intervalId = setInterval(loadVehicle, REFRESH_MS);
+  });
+
+  // service worker
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./service-worker.js')
+        .then(reg => console.log("Service Worker registered:", reg.scope))
+        .catch(err => console.warn("Service Worker registration failed:", err));
+    });
+  }
+
+}); // require end
+</script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
