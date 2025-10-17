@@ -478,13 +478,13 @@ let lastBearing = null;
   const p = vehicleGraphic.geometry;
   const ward = wardSelect.value || "Ward22-A";
 
-  // Remove old deviation line if any
+  // Clear previous deviation graphic
   if (deviationGraphic) {
     view.graphics.remove(deviationGraphic);
     deviationGraphic = null;
   }
 
-  // Pick geometry sources based on ward
+  // Select correct geometries
   let bufferGeom = null, routeGeom = null, polyGeom = null;
   if (ward === "Ward22-A") {
     bufferGeom = wardA_buffer.geometry;
@@ -496,12 +496,11 @@ let lastBearing = null;
     polyGeom = wardPolygon;
   }
 
-  // Containment flags
   let insidePoly = false, insideBuffer = false;
-  try { if (polyGeom) insidePoly = geometryEngine.contains(polyGeom, p); } catch (e) { console.warn(e); }
-  try { if (bufferGeom) insideBuffer = geometryEngine.contains(bufferGeom, p); } catch (e) { console.warn(e); }
+  try { if (polyGeom) insidePoly = geometryEngine.contains(polyGeom, p); } catch(e){}
+  try { if (bufferGeom) insideBuffer = geometryEngine.contains(bufferGeom, p); } catch(e){}
 
-  // --- Helper functions ---
+  // --- helpers ---
   function bearingBetween(p1, p2) {
     const toRad = Math.PI / 180, toDeg = 180 / Math.PI;
     const lat1 = p1.latitude * toRad, lat2 = p2.latitude * toRad;
@@ -522,7 +521,7 @@ let lastBearing = null;
   let statusMsg = "On route within ward ✅";
   let level = "ok";
 
-  // --- Deviation handling ---
+  // --- when deviation detected ---
   if (!insidePoly || !insideBuffer) {
     try {
       if (routeGeom) {
@@ -534,29 +533,33 @@ let lastBearing = null;
             spatialReference: { wkid: 4326 }
           });
 
-          // Extend deviation line slightly along route for smoother look
+          // 🔹 Compute smooth path from vehicle to route
+          // find small route segment near nearest point
           const path = routeGeom.paths[0];
           const i = nearest.vertexIndex;
-          const nextIndex = Math.min(i + 5, path.length - 1);
-          const nextPt = path[nextIndex];
-          const extendedPath = [
-            [p.longitude, p.latitude],
-            [nearestPt.longitude, nearestPt.latitude],
-            nextPt
-          ];
+          const startIdx = Math.max(i - 15, 0);
+          const endIdx = Math.min(i + 15, path.length - 1);
+          const nearbyPath = path.slice(startIdx, endIdx + 1);
 
-          // Draw deviation path
-          const arrowLine = new Polyline({
-            paths: [extendedPath],
+          // Construct new polyline: from vehicle → nearby route points → nearest point
+          const smoothPath = [[p.longitude, p.latitude], ...nearbyPath];
+          const smoothLine = new Polyline({
+            paths: [smoothPath],
             spatialReference: { wkid: 4326 }
           });
+
           deviationGraphic = new Graphic({
-            geometry: arrowLine,
-            symbol: { type: "simple-line", color: [255, 50, 50], width: 3, style: "dash" }
+            geometry: smoothLine,
+            symbol: {
+              type: "simple-line",
+              color: [255, 50, 50],
+              width: 3,
+              style: "short-dot"
+            }
           });
           view.graphics.add(deviationGraphic);
 
-          // Direction guidance
+          // Direction hint
           const bearingToRoute = bearingBetween(p, nearestPt);
           const movementBearing = window.lastBearing ?? bearingToRoute;
           const diff = Math.abs(bearingToRoute - movementBearing);
@@ -565,16 +568,13 @@ let lastBearing = null;
           statusMsg = `${turn} to rejoin route`;
           level = "alert";
 
-          // Update direction indicator box
           const dirBox = document.getElementById("directionIndicator");
           if (dirBox) dirBox.textContent = statusMsg;
-
-          // Save last bearing for next comparison
           window.lastBearing = bearingToRoute;
         }
       }
     } catch (e) {
-      console.warn("nearestCoordinate failed:", e);
+      console.warn("Deviation computation failed:", e);
     }
   } else {
     const dirBox = document.getElementById("directionIndicator");
@@ -583,6 +583,7 @@ let lastBearing = null;
 
   setStatus(statusMsg, level);
 }
+
 
   // Boot
   view.when(() => {
@@ -607,6 +608,7 @@ let lastBearing = null;
 </script>
 </body>
 </html>
+
 
 
 
