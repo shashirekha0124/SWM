@@ -43,23 +43,15 @@
 
 <script>
 const REFRESH_MS = 15000; // 15s
-require([
-  "esri/rest/route",
-"esri/rest/support/RouteParameters",
-"esri/rest/support/FeatureSet",
+require([ 
+  "esri/Map", 
+  "esri/views/MapView", 
+  "esri/geometry/Point", 
+  "esri/geometry/Polygon", 
+  "esri/geometry/Polyline", 
   "esri/Graphic",
-  "esri/geometry/Point",
-  "esri/geometry/Polyline",
-  "esri/geometry/geometryEngine"
-], (
-  RouteTask, RouteParameters, FeatureSet, Graphic, Point, Polyline, geometryEngine
-) => {
-
-  const routeTask = new RouteTask({
-    url: "https://route.arcgis.com/arcgis/rest/services/World/Route/NAServer/Route_World"
-  });
-
-
+  "esri/geometry/geometryEngine" ], 
+  function (Map, MapView, Point, Polygon, Polyline, Graphic, geometryEngine) {
   // --- CONFIG: set correct API URL / token here ---
   const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=QU1oQXZRSEljV1l5bDNSZXZwZ2F2ekFCNWJiT251UzVSblJ1RzJGVUJpTT0kaXRtcyQxNy0xMC0yMDI1IDEzOjIzOjU1";
   const ROUTE_BUFFER_METERS = 25;
@@ -414,9 +406,6 @@ require([
     });
   }
   
-window.view = view;
-  window.setStatus = setStatus;
-  window.loadVehicle = loadVehicle;
   
   async function loadVehicle() {
     if (isFetching) { console.log("fetch already running"); return; }
@@ -488,108 +477,127 @@ window.view = view;
 let deviationArrows = [];
   let lastBearing = null;
 
-  async function checkDeviationAndUpdateStatus() {
-    if (!vehicleGraphic || !vehicleGraphic.geometry) return;
+ function checkDeviationAndUpdateStatus() {
+  if (!vehicleGraphic || !vehicleGraphic.geometry) return;
 
-    const p = vehicleGraphic.geometry;
-    const ward = wardSelect.value || "Ward22-A";
+  const p = vehicleGraphic.geometry;
+  const ward = wardSelect.value || "Ward22-A";
 
-    // remove previous deviation
-    if (deviationGraphic) {
-      view.graphics.remove(deviationGraphic);
-      deviationGraphic = null;
-    }
+  // remove previous deviation graphic
+  if (deviationGraphic) {
+    view.graphics.remove(deviationGraphic);
+    deviationGraphic = null;
+  }
 
-    let bufferGeom = null, routeGeom = null, polyGeom = null, routeStart = null;
-    if (ward === "Ward22-A") {
-      bufferGeom = wardA_buffer.geometry;
-      routeGeom = route1;
-      polyGeom = wardPolygon;
-      routeStart = routeGeom.paths[0][0];
-    } else if (ward === "Ward22-B") {
-      bufferGeom = wardB_buffer.geometry;
-      routeGeom = route2;
-      polyGeom = wardPolygon;
-      routeStart = routeGeom.paths[0][0];
-    }
+  // pick geometries for current ward
+  let bufferGeom = null, routeGeom = null, polyGeom = null;
+  if (ward === "Ward22-A") {
+    bufferGeom = wardA_buffer.geometry;
+    routeGeom = route1;
+    polyGeom = wardPolygon;
+  } else if (ward === "Ward22-B") {
+    bufferGeom = wardB_buffer.geometry;
+    routeGeom = route2;
+    polyGeom = wardPolygon;
+  }
 
-    let insidePoly = false, insideBuffer = false;
-    try { insidePoly = geometryEngine.contains(polyGeom, p); } catch {}
-    try { insideBuffer = geometryEngine.contains(bufferGeom, p); } catch {}
+  let insidePoly = false, insideBuffer = false;
+  try { if (polyGeom) insidePoly = geometryEngine.contains(polyGeom, p); } catch(e){}
+  try { if (bufferGeom) insideBuffer = geometryEngine.contains(bufferGeom, p); } catch(e){}
 
-    let statusMsg = "On route within ward ✅";
-    let level = "ok";
+  // bearing utilities
+  function bearingBetween(p1, p2) {
+    const toRad = Math.PI / 180, toDeg = 180 / Math.PI;
+    const lat1 = p1.latitude * toRad, lat2 = p2.latitude * toRad;
+    const dLon = (p2.longitude - p1.longitude) * toRad;
+    const y = Math.sin(dLon) * Math.cos(lat2);
+    const x = Math.cos(lat1) * Math.sin(lat2) -
+              Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+    return (Math.atan2(y, x) * toDeg + 360) % 360;
+  }
 
-    if (!insidePoly || !insideBuffer) {
-      try {
-        // --- compute live route to start point ---
-        const startPoint = new Point({
-          longitude: routeStart[0],
-          latitude: routeStart[1],
-          spatialReference: { wkid: 4326 }
-        });
+  function directionText(diff) {
+    if (diff > 45 && diff <= 135) return "➡️ Turn Right";
+    if (diff > 225 && diff <= 315) return "⬅️ Turn Left";
+    return "⬆️ Go Straight";
+  }
 
-        const stops = new FeatureSet({
-          features: [
-            new Graphic({ geometry: p }),
-            new Graphic({ geometry: startPoint })
-          ]
-        });
+  let statusMsg = "On route within ward ✅";
+  let level = "ok";
 
-        const params = new RouteParameters({
-          stops,
-          returnDirections: true,
-          returnRoutes: true,
-          outSpatialReference: { wkid: 4326 }
-        });
-
-        const result = await routeTask.solve(params);
-        if (result && result.routeResults.length) {
-          const route = result.routeResults[0].route;
-          route.symbol = {
-            type: "simple-line",
-            color: [255, 200, 0, 0.9], // yellow path
-            width: 4
-          };
-          deviationGraphic = route;
-          view.graphics.add(deviationGraphic);
-
-          // show direction overlay at midpoint
-          const path = route.geometry.paths[0];
-          const midIndex = Math.floor(path.length / 2);
-          const midPt = new Point({
-            longitude: path[midIndex][0],
-            latitude: path[midIndex][1],
+  if (!insidePoly || !insideBuffer) {
+    try {
+      if (routeGeom) {
+        const nearest = geometryEngine.nearestCoordinate(routeGeom, p);
+        if (nearest && nearest.coordinate) {
+          const nearestPt = new Point({
+            longitude: nearest.coordinate.x,
+            latitude: nearest.coordinate.y,
             spatialReference: { wkid: 4326 }
           });
 
-          const dirSymbol = {
+          // find full path from nearest point to route start (green)
+          const routePath = routeGeom.paths[0];
+          const nearestIndex = nearest.vertexIndex;
+          const startIndex = 0; // assuming route starts at green marker
+          const segmentToStart = routePath.slice(startIndex, nearestIndex + 1);
+
+          // create “return” path: vehicle → nearest point → start of route
+          const returnPath = [
+            [p.longitude, p.latitude],
+            ...segmentToStart.reverse()
+          ];
+
+          // deviation line in red
+          deviationGraphic = new Graphic({
+            geometry: new Polyline({
+              paths: [returnPath],
+              spatialReference: { wkid: 4326 }
+            }),
+            symbol: {
+              type: "simple-line",
+              color: [255, 50, 50],
+              width: 3,
+              style: "short-dot"
+            }
+          });
+          view.graphics.add(deviationGraphic);
+
+          // calculate direction for guidance
+          const bearingToRoute = bearingBetween(p, nearestPt);
+          const movementBearing = window.lastBearing ?? bearingToRoute;
+          const diff = Math.abs(bearingToRoute - movementBearing);
+          const turn = directionText(diff);
+          window.lastBearing = bearingToRoute;
+
+          statusMsg = `${turn} to reach route start`;
+          level = "alert";
+
+          // overlay directional text on the map
+          const textSymbol = {
             type: "text",
             color: "green",
-            text: "➡️ Follow this path to rejoin route",
+            text: statusMsg,
+            xoffset: 0,
+            yoffset: -20,
             font: { size: 12, weight: "bold" },
             haloColor: "white",
             haloSize: 2
           };
-          const dirGraphic = new Graphic({ geometry: midPt, symbol: dirSymbol });
-          view.graphics.add(dirGraphic);
-
-          statusMsg = "Follow yellow path to rejoin route ✅";
-          level = "alert";
+          const directionGraphic = new Graphic({
+            geometry: p,
+            symbol: textSymbol
+          });
+          view.graphics.add(directionGraphic);
         }
-      } catch (e) {
-        console.warn("Routing failed:", e);
-        statusMsg = "Unable to compute on-road route.";
-        level = "warn";
       }
+    } catch (e) {
+      console.warn("Deviation handling error:", e);
     }
-
-    setStatus(statusMsg, level);
   }
 
-  // expose for external calls
-  window.checkDeviationAndUpdateStatus = checkDeviationAndUpdateStatus;
-
+  setStatus(statusMsg, level);
+}
 
   // Boot
   view.when(() => {
@@ -600,7 +608,6 @@ let deviationArrows = [];
     loadVehicle();
     intervalId = setInterval(loadVehicle, REFRESH_MS);
   });
-});
 
   // service worker
   if ('serviceWorker' in navigator) {
@@ -613,6 +620,7 @@ let deviationArrows = [];
 </script>
 </body>
 </html>
+
 
 
 
