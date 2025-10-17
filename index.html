@@ -50,7 +50,7 @@ require([
 ], function (Map, MapView, Point, Polygon, Polyline, Graphic, geometryEngine) {
 
   // --- CONFIG: set correct API URL / token here ---
-  const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=c1FLTk9xLzUrc1lsaG5yQkk4am5LT09Vcmp1T1lvYUNsVU5pVEczWHQ0OD0kaXRtcyQxNy0xMC0yMDI1IDEyOjI1OjM0";
+  const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=QU1oQXZRSEljV1l5bDNSZXZwZ2F2ekFCNWJiT251UzVSblJ1RzJGVUJpTT0kaXRtcyQxNy0xMC0yMDI1IDEzOjIzOjU1";
   const ROUTE_BUFFER_METERS = 25;
 
   const statusBar = document.getElementById("statusBar");
@@ -478,13 +478,13 @@ let lastBearing = null;
   const p = vehicleGraphic.geometry;
   const ward = wardSelect.value || "Ward22-A";
 
-  // Clear previous deviation graphic
+  // remove previous deviation graphic
   if (deviationGraphic) {
     view.graphics.remove(deviationGraphic);
     deviationGraphic = null;
   }
 
-  // Select correct geometries
+  // pick geometries for current ward
   let bufferGeom = null, routeGeom = null, polyGeom = null;
   if (ward === "Ward22-A") {
     bufferGeom = wardA_buffer.geometry;
@@ -500,7 +500,7 @@ let lastBearing = null;
   try { if (polyGeom) insidePoly = geometryEngine.contains(polyGeom, p); } catch(e){}
   try { if (bufferGeom) insideBuffer = geometryEngine.contains(bufferGeom, p); } catch(e){}
 
-  // --- helpers ---
+  // bearing utilities
   function bearingBetween(p1, p2) {
     const toRad = Math.PI / 180, toDeg = 180 / Math.PI;
     const lat1 = p1.latitude * toRad, lat2 = p2.latitude * toRad;
@@ -517,11 +517,9 @@ let lastBearing = null;
     return "⬆️ Go Straight";
   }
 
-  // Default status
   let statusMsg = "On route within ward ✅";
   let level = "ok";
 
-  // --- when deviation detected ---
   if (!insidePoly || !insideBuffer) {
     try {
       if (routeGeom) {
@@ -533,23 +531,24 @@ let lastBearing = null;
             spatialReference: { wkid: 4326 }
           });
 
-          // 🔹 Compute smooth path from vehicle to route
-          // find small route segment near nearest point
-          const path = routeGeom.paths[0];
-          const i = nearest.vertexIndex;
-          const startIdx = Math.max(i - 15, 0);
-          const endIdx = Math.min(i + 15, path.length - 1);
-          const nearbyPath = path.slice(startIdx, endIdx + 1);
+          // find full path from nearest point to route start (green)
+          const routePath = routeGeom.paths[0];
+          const nearestIndex = nearest.vertexIndex;
+          const startIndex = 0; // assuming route starts at green marker
+          const segmentToStart = routePath.slice(startIndex, nearestIndex + 1);
 
-          // Construct new polyline: from vehicle → nearby route points → nearest point
-          const smoothPath = [[p.longitude, p.latitude], ...nearbyPath];
-          const smoothLine = new Polyline({
-            paths: [smoothPath],
-            spatialReference: { wkid: 4326 }
-          });
+          // create “return” path: vehicle → nearest point → start of route
+          const returnPath = [
+            [p.longitude, p.latitude],
+            ...segmentToStart.reverse()
+          ];
 
+          // deviation line in red
           deviationGraphic = new Graphic({
-            geometry: smoothLine,
+            geometry: new Polyline({
+              paths: [returnPath],
+              spatialReference: { wkid: 4326 }
+            }),
             symbol: {
               type: "simple-line",
               color: [255, 50, 50],
@@ -559,26 +558,37 @@ let lastBearing = null;
           });
           view.graphics.add(deviationGraphic);
 
-          // Direction hint
+          // calculate direction for guidance
           const bearingToRoute = bearingBetween(p, nearestPt);
           const movementBearing = window.lastBearing ?? bearingToRoute;
           const diff = Math.abs(bearingToRoute - movementBearing);
           const turn = directionText(diff);
+          window.lastBearing = bearingToRoute;
 
-          statusMsg = `${turn} to rejoin route`;
+          statusMsg = `${turn} to reach route start`;
           level = "alert";
 
-          const dirBox = document.getElementById("directionIndicator");
-          if (dirBox) dirBox.textContent = statusMsg;
-          window.lastBearing = bearingToRoute;
+          // overlay directional text on the map
+          const textSymbol = {
+            type: "text",
+            color: "green",
+            text: statusMsg,
+            xoffset: 0,
+            yoffset: -20,
+            font: { size: 12, weight: "bold" },
+            haloColor: "white",
+            haloSize: 2
+          };
+          const directionGraphic = new Graphic({
+            geometry: p,
+            symbol: textSymbol
+          });
+          view.graphics.add(directionGraphic);
         }
       }
     } catch (e) {
-      console.warn("Deviation computation failed:", e);
+      console.warn("Deviation handling error:", e);
     }
-  } else {
-    const dirBox = document.getElementById("directionIndicator");
-    if (dirBox) dirBox.textContent = "✅ On Route";
   }
 
   setStatus(statusMsg, level);
@@ -608,6 +618,7 @@ let lastBearing = null;
 </script>
 </body>
 </html>
+
 
 
 
