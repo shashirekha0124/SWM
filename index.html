@@ -470,7 +470,8 @@ require([
     return "Go Straight ⬆️";
   }
 
-let lastBearing = null;
+let deviationArrows = [];
+  let lastBearing = null;
 
   function checkDeviationAndUpdateStatus() {
   if (!vehicleGraphic || !vehicleGraphic.geometry) return;
@@ -478,13 +479,15 @@ let lastBearing = null;
   const p = vehicleGraphic.geometry;
   const ward = wardSelect.value || "Ward22-A";
 
-  // remove previous deviation graphic
-  if (deviationGraphic) {
-    view.graphics.remove(deviationGraphic);
-    deviationGraphic = null;
+  // remove previous deviation graphics
+  if (deviationGraphic) view.graphics.remove(deviationGraphic);
+  if (deviationArrows) {
+    deviationArrows.forEach(g => view.graphics.remove(g));
+    deviationArrows = [];
   }
+  deviationGraphic = null;
 
-  // pick geometries for current ward
+  // select route + ward geometries
   let bufferGeom = null, routeGeom = null, polyGeom = null;
   if (ward === "Ward22-A") {
     bufferGeom = wardA_buffer.geometry;
@@ -500,7 +503,6 @@ let lastBearing = null;
   try { if (polyGeom) insidePoly = geometryEngine.contains(polyGeom, p); } catch(e){}
   try { if (bufferGeom) insideBuffer = geometryEngine.contains(bufferGeom, p); } catch(e){}
 
-  // bearing utilities
   function bearingBetween(p1, p2) {
     const toRad = Math.PI / 180, toDeg = 180 / Math.PI;
     const lat1 = p1.latitude * toRad, lat2 = p2.latitude * toRad;
@@ -520,30 +522,24 @@ let lastBearing = null;
   let statusMsg = "On route within ward ✅";
   let level = "ok";
 
+  // deviation condition
   if (!insidePoly || !insideBuffer) {
     try {
       if (routeGeom) {
         const nearest = geometryEngine.nearestCoordinate(routeGeom, p);
         if (nearest && nearest.coordinate) {
-          const nearestPt = new Point({
-            longitude: nearest.coordinate.x,
-            latitude: nearest.coordinate.y,
-            spatialReference: { wkid: 4326 }
-          });
-
-          // find full path from nearest point to route start (green)
+          const nearestIdx = nearest.vertexIndex;
           const routePath = routeGeom.paths[0];
-          const nearestIndex = nearest.vertexIndex;
-          const startIndex = 0; // assuming route starts at green marker
-          const segmentToStart = routePath.slice(startIndex, nearestIndex + 1);
+          const startIdx = 0; // green start
+          const segmentToStart = routePath.slice(startIdx, nearestIdx + 1);
 
-          // create “return” path: vehicle → nearest point → start of route
+          // build return path: vehicle → nearest point → start of route
           const returnPath = [
             [p.longitude, p.latitude],
             ...segmentToStart.reverse()
           ];
 
-          // deviation line in red
+          // draw smooth deviation line along the road
           deviationGraphic = new Graphic({
             geometry: new Polyline({
               paths: [returnPath],
@@ -551,43 +547,61 @@ let lastBearing = null;
             }),
             symbol: {
               type: "simple-line",
-              color: [255, 50, 50],
-              width: 3,
-              style: "short-dot"
+              color: [255, 180, 0],
+              width: 4,
+              style: "solid"
             }
           });
           view.graphics.add(deviationGraphic);
 
-          // calculate direction for guidance
+          // add directional arrow markers along the path
+          deviationArrows = [];
+          for (let i = 0; i < returnPath.length - 1; i += 5) {
+            const p1 = new Point({
+              longitude: returnPath[i][0],
+              latitude: returnPath[i][1],
+              spatialReference: { wkid: 4326 }
+            });
+            const p2 = new Point({
+              longitude: returnPath[i + 1][0],
+              latitude: returnPath[i + 1][1],
+              spatialReference: { wkid: 4326 }
+            });
+            const bearing = bearingBetween(p1, p2);
+            const arrowGraphic = new Graphic({
+              geometry: p1,
+              symbol: {
+                type: "text",
+                text: "➡️",
+                angle: bearing,
+                color: [255, 180, 0],
+                haloColor: "white",
+                haloSize: 1,
+                font: { size: 12, weight: "bold" }
+              }
+            });
+            view.graphics.add(arrowGraphic);
+            deviationArrows.push(arrowGraphic);
+          }
+
+          // direction hint for driver
+          const nearestPt = new Point({
+            longitude: nearest.coordinate.x,
+            latitude: nearest.coordinate.y,
+            spatialReference: { wkid: 4326 }
+          });
           const bearingToRoute = bearingBetween(p, nearestPt);
           const movementBearing = window.lastBearing ?? bearingToRoute;
           const diff = Math.abs(bearingToRoute - movementBearing);
           const turn = directionText(diff);
           window.lastBearing = bearingToRoute;
 
-          statusMsg = `${turn} to reach route start`;
+          statusMsg = `${turn} to reach start`;
           level = "alert";
-
-          // overlay directional text on the map
-          const textSymbol = {
-            type: "text",
-            color: "green",
-            text: statusMsg,
-            xoffset: 0,
-            yoffset: -20,
-            font: { size: 12, weight: "bold" },
-            haloColor: "white",
-            haloSize: 2
-          };
-          const directionGraphic = new Graphic({
-            geometry: p,
-            symbol: textSymbol
-          });
-          view.graphics.add(directionGraphic);
         }
       }
     } catch (e) {
-      console.warn("Deviation handling error:", e);
+      console.warn("Deviation handling failed:", e);
     }
   }
 
@@ -618,6 +632,7 @@ let lastBearing = null;
 </script>
 </body>
 </html>
+
 
 
 
