@@ -38,6 +38,7 @@
 
   <button id="recenterBtn" title="Recenter">⤵</button>
 
+  <div id="directionIndicator">➡️ Direction</div>
   <div id="statusBar" class="ok">Status: ready</div>
 
 <script>
@@ -57,6 +58,7 @@ require([
   const wardSelect = document.getElementById("wardSelect");
   const vehicleNumberInput = document.getElementById("vehicleNumber");
   const refreshNowBtn = document.getElementById("refreshNow");
+  const directionIndicator = document.getElementById("directionIndicator");
 
   const wardToVehicle = {
     "Ward22-A": "KA-17-D-5186",
@@ -454,55 +456,115 @@ require([
       isFetching = false;
     }
   }
-
-  function checkDeviationAndUpdateStatus() {
-    if (!vehicleGraphic || !vehicleGraphic.geometry) return;
-    const p = vehicleGraphic.geometry;
-    const ward = wardSelect.value || "Ward22-A"; // default to Ward22-A if not selected
-    const graphics = wardGraphics[ward] || [];
-
-    // Remove previous deviation graphic
-    if (deviationGraphic) { view.graphics.remove(deviationGraphic); deviationGraphic = null; }
-
-    // Determine which route buffer to use (if any)
-    let bufferGeom = null, routeGeom = null, polyGeom = null;
-    if (ward === "Ward22-A") { bufferGeom = wardA_buffer.geometry; routeGeom = route1; polyGeom = wardPolygon; }
-    else if (ward === "Ward22-B") { bufferGeom = wardB_buffer.geometry; routeGeom = route2; polyGeom = wardPolygon; }
-    else { bufferGeom = null; routeGeom = null; polyGeom = null; }
-
-    let insidePoly = false, insideBuffer = false;
-    try { if (polyGeom) insidePoly = geometryEngine.contains(polyGeom, p); } catch(e){ console.warn(e); }
-    try { if (bufferGeom) insideBuffer = geometryEngine.contains(bufferGeom, p); } catch(e){ console.warn(e); }
-
-    if (!insidePoly && !insideBuffer) {
-      // nearest point on route to vehicle
-      try {
-        if (routeGeom) {
-          const nearest = geometryEngine.nearestCoordinate(routeGeom, p);
-          if (nearest && nearest.coordinate) {
-            const arrowLine = new Polyline({
-              paths: [[[p.longitude, p.latitude], [nearest.coordinate.x, nearest.coordinate.y]]],
-              spatialReference: { wkid: 4326 }
-            });
-            deviationGraphic = new Graphic({
-              geometry: arrowLine,
-              symbol: { type: "simple-line", color: [200,30,30], width: 3, style: "dash" }
-            });
-            view.graphics.add(deviationGraphic);
-          }
-        }
-      } catch(e){ console.warn("nearestCoordinate failed:", e); }
-
-      setStatus("ROUTE DEVIATION: outside ward & route corridor!", "alert");
-    } else if (!insidePoly && insideBuffer) {
-      setStatus("On route corridor but outside ward boundary", "warn");
-    } else if (insidePoly && !insideBuffer) {
-      setStatus(`Off route (> ${ROUTE_BUFFER_METERS} m)`, "warn");
-    } else {
-      setStatus("On route within ward ✅", "ok");
-    }
+   function bearingBetween(p1, p2) {
+    const toRad = Math.PI/180, toDeg = 180/Math.PI;
+    const lat1 = p1.latitude*toRad, lat2 = p2.latitude*toRad;
+    const dLon = (p2.longitude - p1.longitude)*toRad;
+    const y = Math.sin(dLon)*Math.cos(lat2);
+    const x = Math.cos(lat1)*Math.sin(lat2)-Math.sin(lat1)*Math.cos(lat2)*Math.cos(dLon);
+    return (Math.atan2(y,x)*toDeg+360)%360;
+  }
+  function directionText(diff) {
+    if (diff > 45 && diff <= 135) return "Turn Right ➡️";
+    if (diff > 225 && diff <= 315) return "Turn Left ⬅️";
+    return "Go Straight ⬆️";
   }
 
+  function checkDeviationAndUpdateStatus() {
+  if (!vehicleGraphic || !vehicleGraphic.geometry) return;
+
+  const p = vehicleGraphic.geometry;
+  const ward = wardSelect.value || "Ward22-A";
+  const graphics = wardGraphics[ward] || [];
+
+  // Remove previous deviation graphic
+  if (deviationGraphic) {
+    view.graphics.remove(deviationGraphic);
+    deviationGraphic = null;
+  }
+
+  // Determine which route buffer and polygon to use
+  let bufferGeom = null, routeGeom = null, polyGeom = null;
+  if (ward === "Ward22-A") {
+    bufferGeom = wardA_buffer.geometry;
+    routeGeom = route1;
+    polyGeom = wardPolygon;
+  } else if (ward === "Ward22-B") {
+    bufferGeom = wardB_buffer.geometry;
+    routeGeom = route2;
+    polyGeom = wardPolygon;
+  }
+
+  // Check containment
+  let insidePoly = false, insideBuffer = false;
+  try { if (polyGeom) insidePoly = geometryEngine.contains(polyGeom, p); } catch (e) { console.warn(e); }
+  try { if (bufferGeom) insideBuffer = geometryEngine.contains(bufferGeom, p); } catch (e) { console.warn(e); }
+
+  // --- Direction helpers ---
+  function bearingBetween(p1, p2) {
+    const toRad = Math.PI / 180, toDeg = 180 / Math.PI;
+    const lat1 = p1.latitude * toRad, lat2 = p2.latitude * toRad;
+    const dLon = (p2.longitude - p1.longitude) * toRad;
+    const y = Math.sin(dLon) * Math.cos(lat2);
+    const x = Math.cos(lat1) * Math.sin(lat2) -
+              Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+    return (Math.atan2(y, x) * toDeg + 360) % 360;
+  }
+
+  function directionText(bearingDiff) {
+    if (bearingDiff > 45 && bearingDiff <= 135) return "➡️ Turn Right";
+    if (bearingDiff > 225 && bearingDiff <= 315) return "⬅️ Turn Left";
+    return "⬆️ Go Straight";
+  }
+
+  // Default status
+  let statusMsg = "On route within ward ✅";
+  let level = "ok";
+
+  if (!insidePoly || !insideBuffer) {
+    try {
+      if (routeGeom) {
+        const nearest = geometryEngine.nearestCoordinate(routeGeom, p);
+        if (nearest && nearest.coordinate) {
+          const nearestPt = new Point({
+            longitude: nearest.coordinate.x,
+            latitude: nearest.coordinate.y,
+            spatialReference: { wkid: 4326 }
+          });
+
+          // Draw deviation arrow line
+          const arrowLine = new Polyline({
+            paths: [[[p.longitude, p.latitude], [nearestPt.longitude, nearestPt.latitude]]],
+            spatialReference: { wkid: 4326 }
+          });
+          deviationGraphic = new Graphic({
+            geometry: arrowLine,
+            symbol: { type: "simple-line", color: [255, 50, 50], width: 3, style: "dash" }
+          });
+          view.graphics.add(deviationGraphic);
+
+          // Calculate bearing and direction
+          const bearingToRoute = bearingBetween(p, nearestPt);
+          const movementBearing = lastBearing ?? bearingToRoute;
+          const diff = Math.abs(bearingToRoute - movementBearing);
+          const turn = directionText(diff);
+
+          statusMsg = `${turn} to rejoin route`;
+          document.getElementById("directionIndicator").textContent = statusMsg;
+          level = "alert";
+
+          lastBearing = bearingToRoute;
+        }
+      }
+    } catch (e) {
+      console.warn("nearestCoordinate failed:", e);
+    }
+  } else {
+    document.getElementById("directionIndicator").textContent = "✅ On Route";
+  }
+
+  setStatus(statusMsg, level);
+}
   // Boot
   view.when(() => {
     setStatus("Map ready — select a ward");
@@ -526,6 +588,7 @@ require([
 </script>
 </body>
 </html>
+
 
 
 
