@@ -44,10 +44,21 @@
 <script>
 const REFRESH_MS = 15000; // 15s
 require([
-  "esri/Map", "esri/views/MapView",
-  "esri/geometry/Point", "esri/geometry/Polygon", "esri/geometry/Polyline",
-  "esri/Graphic", "esri/geometry/geometryEngine"
-], function (Map, MapView, Point, Polygon, Polyline, Graphic, geometryEngine) {
+  "esri/tasks/RouteTask",
+  "esri/tasks/support/RouteParameters",
+  "esri/tasks/support/FeatureSet",
+  "esri/Graphic",
+  "esri/geometry/Point",
+  "esri/geometry/Polyline",
+  "esri/geometry/geometryEngine"
+], (
+  RouteTask, RouteParameters, FeatureSet, Graphic, Point, Polyline, geometryEngine
+) => {
+
+  const routeTask = new RouteTask({
+    url: "https://route.arcgis.com/arcgis/rest/services/World/Route/NAServer/Route_World"
+  });
+
 
   // --- CONFIG: set correct API URL / token here ---
   const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=QU1oQXZRSEljV1l5bDNSZXZwZ2F2ekFCNWJiT251UzVSblJ1RzJGVUJpTT0kaXRtcyQxNy0xMC0yMDI1IDEzOjIzOjU1";
@@ -473,141 +484,108 @@ require([
 let deviationArrows = [];
   let lastBearing = null;
 
-  function checkDeviationAndUpdateStatus() {
-  if (!vehicleGraphic || !vehicleGraphic.geometry) return;
+  async function checkDeviationAndUpdateStatus() {
+    if (!vehicleGraphic || !vehicleGraphic.geometry) return;
 
-  const p = vehicleGraphic.geometry;
-  const ward = wardSelect.value || "Ward22-A";
+    const p = vehicleGraphic.geometry;
+    const ward = wardSelect.value || "Ward22-A";
 
-  // remove previous deviation graphics
-  if (deviationGraphic) view.graphics.remove(deviationGraphic);
-  if (deviationArrows) {
-    deviationArrows.forEach(g => view.graphics.remove(g));
-    deviationArrows = [];
-  }
-  deviationGraphic = null;
+    // remove previous deviation
+    if (deviationGraphic) {
+      view.graphics.remove(deviationGraphic);
+      deviationGraphic = null;
+    }
 
-  // select route + ward geometries
-  let bufferGeom = null, routeGeom = null, polyGeom = null;
-  if (ward === "Ward22-A") {
-    bufferGeom = wardA_buffer.geometry;
-    routeGeom = route1;
-    polyGeom = wardPolygon;
-  } else if (ward === "Ward22-B") {
-    bufferGeom = wardB_buffer.geometry;
-    routeGeom = route2;
-    polyGeom = wardPolygon;
-  }
+    let bufferGeom = null, routeGeom = null, polyGeom = null, routeStart = null;
+    if (ward === "Ward22-A") {
+      bufferGeom = wardA_buffer.geometry;
+      routeGeom = route1;
+      polyGeom = wardPolygon;
+      routeStart = routeGeom.paths[0][0];
+    } else if (ward === "Ward22-B") {
+      bufferGeom = wardB_buffer.geometry;
+      routeGeom = route2;
+      polyGeom = wardPolygon;
+      routeStart = routeGeom.paths[0][0];
+    }
 
-  let insidePoly = false, insideBuffer = false;
-  try { if (polyGeom) insidePoly = geometryEngine.contains(polyGeom, p); } catch(e){}
-  try { if (bufferGeom) insideBuffer = geometryEngine.contains(bufferGeom, p); } catch(e){}
+    let insidePoly = false, insideBuffer = false;
+    try { insidePoly = geometryEngine.contains(polyGeom, p); } catch {}
+    try { insideBuffer = geometryEngine.contains(bufferGeom, p); } catch {}
 
-  function bearingBetween(p1, p2) {
-    const toRad = Math.PI / 180, toDeg = 180 / Math.PI;
-    const lat1 = p1.latitude * toRad, lat2 = p2.latitude * toRad;
-    const dLon = (p2.longitude - p1.longitude) * toRad;
-    const y = Math.sin(dLon) * Math.cos(lat2);
-    const x = Math.cos(lat1) * Math.sin(lat2) -
-              Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-    return (Math.atan2(y, x) * toDeg + 360) % 360;
-  }
+    let statusMsg = "On route within ward ✅";
+    let level = "ok";
 
-  function directionText(diff) {
-    if (diff > 45 && diff <= 135) return "➡️ Turn Right";
-    if (diff > 225 && diff <= 315) return "⬅️ Turn Left";
-    return "⬆️ Go Straight";
-  }
+    if (!insidePoly || !insideBuffer) {
+      try {
+        // --- compute live route to start point ---
+        const startPoint = new Point({
+          longitude: routeStart[0],
+          latitude: routeStart[1],
+          spatialReference: { wkid: 4326 }
+        });
 
-  let statusMsg = "On route within ward ✅";
-  let level = "ok";
+        const stops = new FeatureSet({
+          features: [
+            new Graphic({ geometry: p }),
+            new Graphic({ geometry: startPoint })
+          ]
+        });
 
-  // deviation condition
-  if (!insidePoly || !insideBuffer) {
-    try {
-      if (routeGeom) {
-        const nearest = geometryEngine.nearestCoordinate(routeGeom, p);
-        if (nearest && nearest.coordinate) {
-          const nearestIdx = nearest.vertexIndex;
-          const routePath = routeGeom.paths[0];
-          const startIdx = 0; // green start
-          const segmentToStart = routePath.slice(startIdx, nearestIdx + 1);
+        const params = new RouteParameters({
+          stops,
+          returnDirections: true,
+          returnRoutes: true,
+          outSpatialReference: { wkid: 4326 }
+        });
 
-          // build return path: vehicle → nearest point → start of route
-          const returnPath = [
-            [p.longitude, p.latitude],
-            ...segmentToStart.reverse()
-          ];
-
-          // draw smooth deviation line along the road
-          deviationGraphic = new Graphic({
-            geometry: new Polyline({
-              paths: [returnPath],
-              spatialReference: { wkid: 4326 }
-            }),
-            symbol: {
-              type: "simple-line",
-              color: [255, 180, 0],
-              width: 4,
-              style: "solid"
-            }
-          });
+        const result = await routeTask.solve(params);
+        if (result && result.routeResults.length) {
+          const route = result.routeResults[0].route;
+          route.symbol = {
+            type: "simple-line",
+            color: [255, 200, 0, 0.9], // yellow path
+            width: 4
+          };
+          deviationGraphic = route;
           view.graphics.add(deviationGraphic);
 
-          // add directional arrow markers along the path
-          deviationArrows = [];
-          for (let i = 0; i < returnPath.length - 1; i += 5) {
-            const p1 = new Point({
-              longitude: returnPath[i][0],
-              latitude: returnPath[i][1],
-              spatialReference: { wkid: 4326 }
-            });
-            const p2 = new Point({
-              longitude: returnPath[i + 1][0],
-              latitude: returnPath[i + 1][1],
-              spatialReference: { wkid: 4326 }
-            });
-            const bearing = bearingBetween(p1, p2);
-            const arrowGraphic = new Graphic({
-              geometry: p1,
-              symbol: {
-                type: "text",
-                text: "➡️",
-                angle: bearing,
-                color: [255, 180, 0],
-                haloColor: "white",
-                haloSize: 1,
-                font: { size: 12, weight: "bold" }
-              }
-            });
-            view.graphics.add(arrowGraphic);
-            deviationArrows.push(arrowGraphic);
-          }
-
-          // direction hint for driver
-          const nearestPt = new Point({
-            longitude: nearest.coordinate.x,
-            latitude: nearest.coordinate.y,
+          // show direction overlay at midpoint
+          const path = route.geometry.paths[0];
+          const midIndex = Math.floor(path.length / 2);
+          const midPt = new Point({
+            longitude: path[midIndex][0],
+            latitude: path[midIndex][1],
             spatialReference: { wkid: 4326 }
           });
-          const bearingToRoute = bearingBetween(p, nearestPt);
-          const movementBearing = window.lastBearing ?? bearingToRoute;
-          const diff = Math.abs(bearingToRoute - movementBearing);
-          const turn = directionText(diff);
-          window.lastBearing = bearingToRoute;
 
-          statusMsg = `${turn} to reach start`;
+          const dirSymbol = {
+            type: "text",
+            color: "green",
+            text: "➡️ Follow this path to rejoin route",
+            font: { size: 12, weight: "bold" },
+            haloColor: "white",
+            haloSize: 2
+          };
+          const dirGraphic = new Graphic({ geometry: midPt, symbol: dirSymbol });
+          view.graphics.add(dirGraphic);
+
+          statusMsg = "Follow yellow path to rejoin route ✅";
           level = "alert";
         }
+      } catch (e) {
+        console.warn("Routing failed:", e);
+        statusMsg = "Unable to compute on-road route.";
+        level = "warn";
       }
-    } catch (e) {
-      console.warn("Deviation handling failed:", e);
     }
+
+    setStatus(statusMsg, level);
   }
 
-  setStatus(statusMsg, level);
-}
-
+  // expose for external calls
+  window.checkDeviationAndUpdateStatus = checkDeviationAndUpdateStatus;
+});
 
   // Boot
   view.when(() => {
@@ -632,6 +610,7 @@ let deviationArrows = [];
 </script>
 </body>
 </html>
+
 
 
 
