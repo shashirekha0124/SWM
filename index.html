@@ -44,9 +44,9 @@
 <script>
 const REFRESH_MS = 15000; // 15s
 require([
-  "esri/tasks/RouteTask",
-  "esri/tasks/support/RouteParameters",
-  "esri/tasks/support/FeatureSet",
+  "esri/rest/route",
+"esri/rest/support/RouteParameters",
+"esri/rest/support/FeatureSet",
   "esri/Graphic",
   "esri/geometry/Point",
   "esri/geometry/Polyline",
@@ -413,7 +413,11 @@ require([
       return false;
     });
   }
-
+  
+window.view = view;
+  window.setStatus = setStatus;
+  window.loadVehicle = loadVehicle;
+  
   async function loadVehicle() {
     if (isFetching) { console.log("fetch already running"); return; }
     isFetching = true;
@@ -585,7 +589,7 @@ let deviationArrows = [];
 
   // expose for external calls
   window.checkDeviationAndUpdateStatus = checkDeviationAndUpdateStatus;
-});
+
 
   // Boot
   view.when(() => {
@@ -596,6 +600,7 @@ let deviationArrows = [];
     loadVehicle();
     intervalId = setInterval(loadVehicle, REFRESH_MS);
   });
+});
 
   // service worker
   if ('serviceWorker' in navigator) {
@@ -608,6 +613,7 @@ let deviationArrows = [];
 </script>
 </body>
 </html>
+
 
 
 
