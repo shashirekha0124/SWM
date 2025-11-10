@@ -53,7 +53,7 @@ require([
   "esri/geometry/geometryEngine" ], 
   function (Map, MapView, Point, Polygon, Polyline, Graphic, geometryEngine) {
   // --- CONFIG: set correct API URL / token here ---
-  const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=bEpNMWlqSkdWaVAxMGhqTmtJeDhOakFEbjBUUGM4akdHUnpwbGpjUG1XUT0kaXRtcyQxMC0xMS0yMDI1IDEwOjI3OjQy";
+  const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=dlIzNlAzczR1bkNjZWc3L3hPWjNsTUQ2YXpRMGFOV1pTd3Y2RDNWTTNWWT0kaXRtcyQxMC0xMS0yMDI1IDE2OjI3OjA1";
   const ROUTE_BUFFER_METERS = 25;
 
   const statusBar = document.getElementById("statusBar");
@@ -2482,98 +2482,6 @@ require([
   }
   // --- Function to get a road-following route from OSRM ---
 // 🚗 Function: Draw route from current position to a ward's START point
-async function getRoadPolyline(startGraphic, endGraphic) {
-  try {
-    const startLng = startGraphic.geometry.longitude;
-    const startLat = startGraphic.geometry.latitude;
-    const endLng = endGraphic.geometry.longitude;
-    const endLat = endGraphic.geometry.latitude;
-
-    // Get the road-following path (OSRM will snap these points)
-    const routeRes = await fetch(
-      `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`
-    );
-    const routeData = await routeRes.json();
-    if (!routeData.routes?.length) return null;
-
-    // Get OSRM's road path
-    let coords = routeData.routes[0].geometry.coordinates;
-
-    // 🚨 Force the polyline to start at your real start point (NOT the snapped one)
-    const distFromTrueStart = Math.sqrt(
-      (coords[0][0] - startLng) ** 2 + (coords[0][1] - startLat) ** 2
-    );
-    if (distFromTrueStart > 0.00001) {
-      coords.unshift([startLng, startLat]);
-    }
-
-    // 🚨 Force the polyline to end at your real end point
-    const distFromTrueEnd = Math.sqrt(
-      (coords[coords.length - 1][0] - endLng) ** 2 + (coords[coords.length - 1][1] - endLat) ** 2
-    );
-    if (distFromTrueEnd > 0.00001) {
-      coords.push([endLng, endLat]);
-    }
-
-    // Return road-following polyline that includes your true start point
-    return {
-      type: "polyline",
-      paths: [coords],
-      spatialReference: { wkid: 4326 }
-    };
-  } catch (err) {
-    console.error("Error generating route:", err);
-    return null;
-  }
-}
-
-
-function showDirectionToStart(route) {
-  // always pick the first coordinate of the route as the start
-  const firstPath = route.paths[0];
-  if (!firstPath || firstPath.length < 2) return;
-
-  const [startLon, startLat] = firstPath[0];
-  const [nextLon, nextLat] = firstPath[1];
-
-  const startPoint = new Point({
-    longitude: startLon,
-    latitude: startLat,
-    spatialReference: { wkid: 4326 }
-  });
-
-  const directionLine = new Polyline({
-    paths: [[[startLon, startLat], [nextLon, nextLat]]],
-    spatialReference: { wkid: 4326 }
-  });
-
-  const startGraphic = new Graphic({
-    geometry: startPoint,
-    symbol: {
-      type: "simple-marker",
-      color: "green",
-      size: 10,
-      outline: { color: [255, 255, 255], width: 1 }
-    }
-  });
-
-  const arrowGraphic = new Graphic({
-    geometry: directionLine,
-    symbol: {
-      type: "simple-line",
-      color: [0, 128, 255, 0.8],
-      width: 3,
-      marker: {
-        type: "arrow",
-        color: [0, 128, 255],
-        style: "short"
-      }
-    }
-  });
-
-  view.graphics.addMany([startGraphic, arrowGraphic]);
-  view.goTo(startPoint).catch(() => {});
-}
 
 
   async function loadVehicle() {
@@ -2644,10 +2552,11 @@ function showDirectionToStart(route) {
   }
 
 let deviationArrows = [];
-  let lastBearing = null;
+let lastBearing = null;
+
 async function checkDeviationAndUpdateStatus() {
   try {
-    // Ensure vehicle graphic exists
+    // ✅ Ensure vehicle marker exists
     if (!vehicleGraphic || !vehicleGraphic.geometry) {
       console.warn("No vehicle geometry available yet.");
       setStatus("Vehicle location not available", "warn");
@@ -2657,16 +2566,17 @@ async function checkDeviationAndUpdateStatus() {
     const ward = wardSelect.value || "Ward22-A";
     const p = vehicleGraphic.geometry;
 
-    // Remove previous deviation graphic
-    if (deviationGraphic) {
-      view.graphics.remove(deviationGraphic);
-      deviationGraphic = null;
-    }
+    // 🧹 Remove any previous direction/deviation lines
+    view.graphics.removeMany(
+      view.graphics.filter(g =>
+        g.attributes?.type === "vehicle-direction" ||
+        g.attributes?.type === "deviation-line"
+      )
+    );
 
-    // Initialize
+    // 🗺 Initialize ward geometry references
     let bufferGeom = null, routeGeom = null, polyGeom = null;
 
-    // Safe geometry assignment per ward
     if (ward === "Ward22-A" && wardA_buffer?.geometry && route1 && wardPolygon) {
       bufferGeom = wardA_buffer.geometry;
       routeGeom = route1;
@@ -2689,101 +2599,110 @@ async function checkDeviationAndUpdateStatus() {
       return;
     }
 
-    // Check geometry validity
+    // 🧭 Validate spatial references
     if (!bufferGeom?.spatialReference || !polyGeom?.spatialReference) {
       console.warn("Spatial reference missing for ward:", ward);
       setStatus("Invalid geometry or spatial reference missing", "warn");
       return;
     }
 
-    // Perform containment checks safely
+    // ✅ Check if vehicle is inside ward polygon or buffer
     let insidePoly = false, insideBuffer = false;
-    try {
-      insidePoly = geometryEngine.contains(polyGeom, p);
-    } catch (e) {
-      console.warn("Polygon containment check failed:", e);
-    }
+    try { insidePoly = geometryEngine.contains(polyGeom, p); } catch (e) {}
+    try { insideBuffer = geometryEngine.contains(bufferGeom, p); } catch (e) {}
 
-    try {
-      insideBuffer = geometryEngine.contains(bufferGeom, p);
-    } catch (e) {
-      console.warn("Buffer containment check failed:", e);
-    }
-
-    let statusMsg = "✅ On route within ward";
+    let statusMsg = "✅ Vehicle on route within ward";
     let level = "ok";
 
-    // If vehicle is outside route or buffer
+    // ⚠️ If vehicle is off route → show road-following direction to start point
     if (!insidePoly || !insideBuffer) {
       try {
-        if (routeGeom && routeGeom.spatialReference) {
-          const nearest = geometryEngine.nearestCoordinate(routeGeom, p);
-          if (nearest?.coordinate) {
-            const nearestPt = new Point({
-              x: nearest.coordinate.x,
-              y: nearest.coordinate.y,
-              spatialReference: routeGeom.spatialReference
-            });
+        const wardMap = {
+          "Ward22-A": wardA_start,
+          "Ward22-B": wardB_start,
+          "Ward42-A": wardC_start,
+          "Ward42-B": wardD_start
+        };
 
-          // --- Draw road-following deviation line starting from vehicle location ---
-try {
-  const url = `https://router.project-osrm.org/route/v1/driving/${p.longitude},${p.latitude};${nearestPt.longitude},${nearestPt.latitude}?overview=full&geometries=geojson`;
-
-  const routeResponse = await fetch(url);
-  const data = await routeResponse.json();
-
-  if (!data.routes?.length || !data.routes[0].geometry) {
-    console.warn("No valid OSRM route found between vehicle and nearest point.");
-    return;
-  }
-
-  const roadPath = data.routes[0].geometry.coordinates;
-  const vehicleCoord = [p.longitude, p.latitude];
-  if (JSON.stringify(roadPath[0]) !== JSON.stringify(vehicleCoord)) {
-    roadPath.unshift(vehicleCoord);
-  }
-
-  const deviationGraphic = new Graphic({
-    geometry: new Polyline({
-      paths: [roadPath],
-      spatialReference: { wkid: 4326 }
-    }),
-    symbol: {
-      type: "simple-line",
-      color: [255, 0, 0],
-      width: 4
-    },
-    attributes: { type: "deviation-line" }
-  });
-
-  // Remove old deviation lines
-  view.graphics.removeMany(
-    view.graphics.filter(g => g.attributes?.type === "deviation-line")
-  );
-
-  view.graphics.add(deviationGraphic);
-  console.log("✅ Deviation line drawn from vehicle location along road path.");
-} catch (err) {
-  console.error("Error fetching or drawing OSRM route:", err);
-}
-
-            view.graphics.add(deviationGraphic);
-            statusMsg = "⚠️ Vehicle off route";
-            level = "alert";
-          } else {
-            statusMsg = "⚠️ Vehicle not near route";
-            level = "warn";
-          }
-        } else {
-          console.warn("No valid route geometry to calculate deviation.");
+        const startGraphic = wardMap[ward];
+        if (!startGraphic || !startGraphic.geometry) {
+          console.warn("No start graphic found for ward:", ward);
+          return;
         }
+
+        const startPoint = startGraphic.geometry;
+
+        // 🔑 Use your Esri Routing API key here
+        const apiKey = "AAPTxy8BH1VEsoebNVZXo8HurH8TO8YnmRmaigUeBPocgggV3BId87IbBvyddH7EXnLrfWa98bWBYzi_9rQYGHp2gDA5bn532BsC1hPVsp73gUEZJ1kKii7M8Xqy35VlWbqugyCJUC4yB3IZqwl8KWrT7ct6lW6_YMUfejZ4de3sOXOepRsSv67hFSXDj1lduvWXL6F1IY_q5QvtWyig3LOKRTaDp5G0eO8D7sqdhsWpx2U"; // <--- replace this
+
+        // 🌐 Esri World Routing Service endpoint
+        const routeUrl = "https://route-api.arcgis.com/arcgis/rest/services/World/Route/NAServer/Route_World/solve";
+
+        // 🗺 Build routing parameters
+        const params = new URLSearchParams({
+          f: "json",
+          token: apiKey,
+          stops: `${p.longitude},${p.latitude};${startPoint.longitude},${startPoint.latitude}`,
+          returnRoutes: true,
+          returnDirections: false,
+          returnBarriers: false,
+          returnPolylineBarriers: false,
+          returnZ: false
+        });
+
+        // 🔄 Fetch route data
+        const routeResponse = await fetch(`${routeUrl}?${params.toString()}`);
+        const routeData = await routeResponse.json();
+
+        if (routeData.routes?.features?.length) {
+          const routeGeom = routeData.routes.features[0].geometry;
+          const esriRoute = new Polyline({
+            paths: routeGeom.paths,
+            spatialReference: { wkid: 4326 }
+          });
+
+          const lineGraphic = new Graphic({
+            geometry: esriRoute,
+            symbol: {
+              type: "simple-line",
+              color: [255, 0, 0, 0.9],
+              width: 4
+            },
+            attributes: { type: "vehicle-direction" }
+          });
+
+          view.graphics.add(lineGraphic);
+          console.log("✅ Road-following route drawn from vehicle to ward start point.");
+        } else {
+          console.warn("⚠️ No Esri route found — falling back to straight line.");
+
+          // fallback: simple straight line
+          const fallbackLine = new Polyline({
+            paths: [[[p.longitude, p.latitude], [startPoint.longitude, startPoint.latitude]]],
+            spatialReference: { wkid: 4326 }
+          });
+          const fallbackGraphic = new Graphic({
+            geometry: fallbackLine,
+            symbol: {
+              type: "simple-line",
+              color: [255, 0, 0, 0.9],
+              width: 4
+            },
+            attributes: { type: "vehicle-direction" }
+          });
+          view.graphics.add(fallbackGraphic);
+        }
+
+        statusMsg = "⚠️ Vehicle off route — showing road path to start point";
+        level = "alert";
       } catch (e) {
-        console.warn("Deviation calculation failed:", e);
+        console.error("Error generating Esri route:", e);
       }
     }
 
-    // Update status bar
+    // 🧾 Update status bar
     setStatus(statusMsg, level);
+
   } catch (err) {
     console.error("checkDeviationAndUpdateStatus() failed:", err);
     setStatus("Unexpected error in deviation check", "alert");
