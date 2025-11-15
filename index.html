@@ -50,10 +50,12 @@ require([
   "esri/geometry/Polygon", 
   "esri/geometry/Polyline", 
   "esri/Graphic",
-  "esri/geometry/geometryEngine" ], 
-  function (Map, MapView, Point, Polygon, Polyline, Graphic, geometryEngine) {
+  "esri/geometry/geometryEngine",
+  "esri/geometry/support/webMercatorUtils",   // <-- REQUIRED
+  "esri/request"], 
+  function (Map, MapView, Point, Polygon, Polyline, Graphic, geometryEngine,webMercatorUtils, esriRequest) {
   // --- CONFIG: set correct API URL / token here ---
-  const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=bEs2cjAwMXY1dlMrTk8xU2x4Tm5jZ2ZFQmxqbkozOHVTcFQ5VGNBQzlqYz0kaXRtcyQxMy0xMS0yMDI1IDEwOjM2OjI0";
+  const API_URL = "https://dsclitsapi.karnatakasmartcity.in/ITMSCiscoPG/VehicleCurrentStatus?RequestToken=U0wvUnpPM0JHNDE5YlM0VjN0eVpDSkcycUtIMkNmK3BzM1ZjWEJUQkZnaz0kaXRtcyQxNS0xMS0yMDI1IDE3OjEzOjM3";
   const ROUTE_BUFFER_METERS = 25;
 
   const statusBar = document.getElementById("statusBar");
@@ -75,7 +77,13 @@ require([
     statusBar.textContent = "Status: " + text;
     console.log("[STATUS]", text);
   }
+  
+  // --- Convert WGS84 → WebMercator for distance calculation ---
+function pointToWebMercator(pt) {
+  return webMercatorUtils.geographicToWebMercator(pt);
+}
 
+  
   // flexible helpers
   function getAny(obj, keys) {
     for (const k of keys) if (obj && obj[k] !== undefined && obj[k] !== null && obj[k] !== "") return obj[k];
@@ -2550,165 +2558,377 @@ require([
     if (diff > 225 && diff <= 315) return "Turn Left ⬅️";
     return "Go Straight ⬆️";
   }
-
 let deviationArrows = [];
 let lastBearing = null;
+let lastOutsideInstruction = "";
+let lastInsideInstruction = "";
+
+// ------------------ TTS ------------------
+function speakInstruction(text) {
+  try {
+    const msg = new SpeechSynthesisUtterance(text);
+    msg.lang = "en-IN";
+    msg.rate = 1;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(msg);
+  } catch (err) {
+    console.warn("Speech error:", err);
+  }
+}
+
+function showInstruction(msg, level="warn") {
+  setStatus(msg, level);
+  speakInstruction(msg);
+}
+
+// ------------------ ESRI TEXT SIMPLIFIER ------------------
+function simplifyInstruction(text) {
+  let t = text.toLowerCase();
+
+  // Remove ESRI default words
+  t = t.replace(/go north|go south|go east|go west/g, "go straight");
+  t = t.replace(/head north|head south|head east|head west/g, "go straight");
+
+  // Replace unnecessary "on XYZ Road"
+  t = t.replace(/on .*/g, "");   // removes road names
+
+  // Left/right logic
+  if (t.includes("right")) return "Take right";
+  if (t.includes("left")) return "Take left";
+  if (t.includes("straight") || t.includes("continue")) return "Go straight";
+
+  // Arrive
+  if (t.includes("arrive")) return "You are arriving";
+
+  return t.trim();
+}
+
+
+// ------------------ BEARING + TURN LOGIC ------------------
+function getBearing(lat1, lon1, lat2, lon2) {
+
+  // Convert degrees → radians
+  const toRad = d => d * Math.PI / 180;
+  const toDeg = r => r * 180 / Math.PI;
+
+  lat1 = toRad(lat1);
+  lon1 = toRad(lon1);
+  lat2 = toRad(lat2);
+  lon2 = toRad(lon2);
+
+  const dLon = lon2 - lon1;
+
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+
+  let brng = toDeg(Math.atan2(y, x));
+
+  // Normalize 0–360°
+  brng = (brng + 360) % 360;
+
+  return brng;
+}
+function turnText(diff) {
+  if (diff < 30 || diff > 330) return "Go straight";
+  if (diff >= 30 && diff <= 140) return "Take right";
+  if (diff >= 220 && diff <= 330) return "Take left";
+  return "Proceed";
+}
+function getTurnInstruction(prevSeg, nextSeg) {
+  const bearing1 = getBearing(prevSeg.y1, prevSeg.x1, prevSeg.y2, prevSeg.x2);
+  const bearing2 = getBearing(nextSeg.y1, nextSeg.x1, nextSeg.y2, nextSeg.x2);
+
+  let diff = (bearing2 - bearing1 + 360) % 360;
+  if (diff > 180) diff -= 360;
+
+  if (diff > 35) return "Take right";
+  if (diff < -35) return "Take left";
+  return "Go straight";
+}
+
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLon = (lon2-lon1) * Math.PI/180;
+
+  const a = Math.sin(dLat/2)**2 +
+            Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) *
+            Math.sin(dLon/2)**2;
+
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
 
 async function checkDeviationAndUpdateStatus() {
+
   try {
-    // ✅ Ensure vehicle marker exists
+    // ------------------------------------------------------
+    //  VEHICLE CHECK
+    // ------------------------------------------------------
     if (!vehicleGraphic || !vehicleGraphic.geometry) {
-      console.warn("No vehicle geometry available yet.");
       setStatus("Vehicle location not available", "warn");
       return;
     }
 
-    const ward = wardSelect.value || "Ward22-A";
     const p = vehicleGraphic.geometry;
+    const ward = wardSelect.value;
 
-    // 🧹 Remove any previous direction/deviation lines
+    // ------------------------------------------------------
+    //  CLEAR OLD ROUTE LINES
+    // ------------------------------------------------------
     view.graphics.removeMany(
-      view.graphics.filter(g =>
-        g.attributes?.type === "vehicle-direction" ||
-        g.attributes?.type === "deviation-line"
-      )
+      view.graphics.filter(g => g.attributes?.type === "vehicle-direction")
     );
 
-    // 🗺 Initialize ward geometry references
-    let bufferGeom = null, routeGeom = null, polyGeom = null;
+    // ------------------------------------------------------
+    //  WARD MAPPINGS
+    // ------------------------------------------------------
+    const wardStartMap = {
+      "Ward22-A": wardA_start,
+      "Ward22-B": wardB_start,
+      "Ward42-A": wardC_start,
+      "Ward42-B": wardD_start
+    };
+    const wardEndMap = {
+      "Ward22-A": wardA_end,
+      "Ward22-B": wardB_end,
+      "Ward42-A": wardC_end,
+      "Ward42-B": wardD_end
+    };
+    const bufferMap = {
+      "Ward22-A": wardA_buffer,
+      "Ward22-B": wardB_buffer,
+      "Ward42-A": wardC_buffer,
+      "Ward42-B": wardD_buffer
+    };
+    const routeMap = {
+      "Ward22-A": route1,
+      "Ward22-B": route2,
+      "Ward42-A": route1A,
+      "Ward42-B": route2B
+    };
+    const polyMap = {
+      "Ward22-A": wardPolygon,
+      "Ward22-B": wardPolygon,
+      "Ward42-A": wardPolygon1,
+      "Ward42-B": wardPolygon1
+    };
 
-    if (ward === "Ward22-A" && wardA_buffer?.geometry && route1 && wardPolygon) {
-      bufferGeom = wardA_buffer.geometry;
-      routeGeom = route1;
-      polyGeom = wardPolygon;
-    } else if (ward === "Ward22-B" && wardB_buffer?.geometry && route2 && wardPolygon) {
-      bufferGeom = wardB_buffer.geometry;
-      routeGeom = route2;
-      polyGeom = wardPolygon;
-    } else if (ward === "Ward42-A" && wardC_buffer?.geometry && route1A && wardPolygon1) {
-      bufferGeom = wardC_buffer.geometry;
-      routeGeom = route1A;
-      polyGeom = wardPolygon1;
-    } else if (ward === "Ward42-B" && wardD_buffer?.geometry && route2B && wardPolygon1) {
-      bufferGeom = wardD_buffer.geometry;
-      routeGeom = route2B;
-      polyGeom = wardPolygon1;
-    } else {
-      console.warn("No valid geometry found for this ward:", ward);
-      setStatus("Geometry not found for selected ward", "warn");
+    const startPoint = wardStartMap[ward].geometry;
+    const endPoint   = wardEndMap[ward].geometry;
+    const bufferGeom = bufferMap[ward].geometry;
+    const polyGeom   = polyMap[ward];
+    const wardRoute  = routeMap[ward];
+
+    // ------------------------------------------------------
+    //  ARRIVAL CHECK
+    // ------------------------------------------------------
+    const pWM  = pointToWebMercator(p);
+    const spWM = pointToWebMercator(startPoint);
+    const epWM = pointToWebMercator(endPoint);
+
+    const distToStart = geometryEngine.distance(pWM, spWM, "meters");
+    const distToEnd   = geometryEngine.distance(pWM, epWM, "meters");
+
+    if (distToStart < 18) {
+      showInstruction("🎯 You reached the START point. Begin your trip!", "ok");
+      return;
+    }
+    if (distToEnd < 18) {
+      showInstruction("🏁 Trip completed. You reached the END point!", "ok");
       return;
     }
 
-    // 🧭 Validate spatial references
-    if (!bufferGeom?.spatialReference || !polyGeom?.spatialReference) {
-      console.warn("Spatial reference missing for ward:", ward);
-      setStatus("Invalid geometry or spatial reference missing", "warn");
-      return;
-    }
+    // ------------------------------------------------------
+    //  CHECK INSIDE / OUTSIDE WARD
+    // ------------------------------------------------------
+    const insidePoly   = geometryEngine.contains(polyGeom, p);
+    const insideBuffer = geometryEngine.contains(bufferGeom, p);
 
-    // ✅ Check if vehicle is inside ward polygon or buffer
-    let insidePoly = false, insideBuffer = false;
-    try { insidePoly = geometryEngine.contains(polyGeom, p); } catch (e) {}
-    try { insideBuffer = geometryEngine.contains(bufferGeom, p); } catch (e) {}
-
-    let statusMsg = "✅ Vehicle on route within ward";
-    let level = "ok";
-
-    // ⚠️ If vehicle is off route → show road-following direction to start point
+    // =====================================================================
+    // 🚨 VEHICLE OFF ROUTE → ESRI TURN-BY-TURN NAVIGATION
+    // =====================================================================
     if (!insidePoly || !insideBuffer) {
+
       try {
-        const wardMap = {
-          "Ward22-A": wardA_start,
-          "Ward22-B": wardB_start,
-          "Ward42-A": wardC_start,
-          "Ward42-B": wardD_start
-        };
+        const apiKey = "AAPTxy8BH1VEsoebNVZXo8HurH8TO8YnmRmaigUeBPocgggV3BId87IbBvyddH7EXnLrfWa98bWBYzi_9rQYGHp2gDA5bn532BsC1hPVsp73gUEZJ1kKii7M8Xqy35VlWbqugyCJUC4yB3IZqwl8KWrT7ct6lW6_YMUfejZ4de3sOXOepRsSv67hFSXDj1lduvWXL6F1IY_q5QvtWyig3LOKRTaDp5G0eO8D7sqdhsWpx2U";
 
-        const startGraphic = wardMap[ward];
-        if (!startGraphic || !startGraphic.geometry) {
-          console.warn("No start graphic found for ward:", ward);
-          return;
-        }
+        const routeUrl =
+          "https://route-api.arcgis.com/arcgis/rest/services/World/Route/NAServer/Route_World/solve";
 
-        const startPoint = startGraphic.geometry;
-
-        // 🔑 Use your Esri Routing API key here
-        const apiKey = "AAPTxy8BH1VEsoebNVZXo8HurH8TO8YnmRmaigUeBPocgggV3BId87IbBvyddH7EXnLrfWa98bWBYzi_9rQYGHp2gDA5bn532BsC1hPVsp73gUEZJ1kKii7M8Xqy35VlWbqugyCJUC4yB3IZqwl8KWrT7ct6lW6_YMUfejZ4de3sOXOepRsSv67hFSXDj1lduvWXL6F1IY_q5QvtWyig3LOKRTaDp5G0eO8D7sqdhsWpx2U"; // <--- replace this
-
-        // 🌐 Esri World Routing Service endpoint
-        const routeUrl = "https://route-api.arcgis.com/arcgis/rest/services/World/Route/NAServer/Route_World/solve";
-
-        // 🗺 Build routing parameters
         const params = new URLSearchParams({
           f: "json",
           token: apiKey,
           stops: `${p.longitude},${p.latitude};${startPoint.longitude},${startPoint.latitude}`,
           returnRoutes: true,
-          returnDirections: false,
-          returnBarriers: false,
-          returnPolylineBarriers: false,
-          returnZ: false
+          returnDirections: true,
+          directionsOutputType: "esriNAOutputLine",
+          directionsLanguage: "en"
         });
 
-        // 🔄 Fetch route data
-        const routeResponse = await fetch(`${routeUrl}?${params.toString()}`);
-        const routeData = await routeResponse.json();
+        const res  = await fetch(routeUrl + "?" + params.toString());
+        const data = await res.json();
 
-        if (routeData.routes?.features?.length) {
-          const routeGeom = routeData.routes.features[0].geometry;
-          const esriRoute = new Polyline({
-            paths: routeGeom.paths,
-            spatialReference: { wkid: 4326 }
-          });
+        // ---- Draw ESRI Route ----
+        if (data.routes?.features?.length) {
+          const geom = data.routes.features[0].geometry;
 
-          const lineGraphic = new Graphic({
-            geometry: esriRoute,
-            symbol: {
-              type: "simple-line",
-              color: [255, 0, 0, 0.9],
-              width: 4
-            },
-            attributes: { type: "vehicle-direction" }
-          });
-
-          view.graphics.add(lineGraphic);
-          console.log("✅ Road-following route drawn from vehicle to ward start point.");
-        } else {
-          console.warn("⚠️ No Esri route found — falling back to straight line.");
-
-          // fallback: simple straight line
-          const fallbackLine = new Polyline({
-            paths: [[[p.longitude, p.latitude], [startPoint.longitude, startPoint.latitude]]],
-            spatialReference: { wkid: 4326 }
-          });
-          const fallbackGraphic = new Graphic({
-            geometry: fallbackLine,
-            symbol: {
-              type: "simple-line",
-              color: [255, 0, 0, 0.9],
-              width: 4
-            },
-            attributes: { type: "vehicle-direction" }
-          });
-          view.graphics.add(fallbackGraphic);
+          view.graphics.add(
+            new Graphic({
+              geometry: new Polyline({
+                paths: geom.paths,
+                spatialReference: { wkid: 4326 }
+              }),
+              symbol: { type: "simple-line", color: [255,0,0], width: 4 },
+              attributes: { type: "vehicle-direction" }
+            })
+          );
         }
 
-        statusMsg = "⚠️ Vehicle off route — showing road path to start point";
-        level = "alert";
-      } catch (e) {
-        console.error("Error generating Esri route:", e);
+        // ---- ESRI TURN BY TURN ----
+        // ---- Turn-by-Turn Instructions ----
+// ---- Turn-by-Turn Instructions ----
+let steps = [];
+if (data.directions && data.directions.length > 0) {
+  steps = data.directions[0].features;
+}
+
+// Remove useless instructions
+steps = steps.filter(s => {
+  const t = s.attributes.text.toLowerCase();
+  return !t.includes("start") && !t.includes("location");
+});
+
+if (steps.length > 0) {
+
+  const next = steps[0].attributes;
+
+  const rawText = next.text;  
+  const simple  = simplifyInstruction(rawText);
+
+  const distMeters = Math.floor(next.length * 1000);
+
+  // -----------------------------
+  // FIX: Extract road name
+  // -----------------------------
+  let street = next.streetName || "";
+
+  if (!street) {
+    const t = rawText;
+    if (t.includes(" on ")) street = t.split(" on ")[1];
+    if (t.includes(" onto ")) street = t.split(" onto ")[1];
+    street = street.split(" for ")[0].trim();
+  }
+
+  // If still empty – fallback
+  if (!street) street = "the road";
+
+  let msg = "";
+
+  if (distMeters > 60) {
+    msg = `In ${distMeters} meters, ${simple.toLowerCase()} toward ${street}`;
+  }
+  else if (distMeters > 20) {
+    msg = `${simple.toLowerCase()} toward ${street}`;
+  }
+  else {
+    msg = `${simple} now toward ${street}`;
+  }
+
+  showInstruction(msg, "alert");
+} 
+else {
+  showInstruction("Vehicle off route — follow the red route", "alert");
+}
+
+
+return;
+      } catch (err) {
+        console.error("Routing error:", err);
       }
     }
 
-    // 🧾 Update status bar
-    setStatus(statusMsg, level);
+    // =====================================================================
+// 🚗 INSIDE WARD → LOCAL TURN-BY-TURN (RELATIVE TURN LOGIC)
+// =====================================================================
+// =====================================================================
+//          🚗 INSIDE WARD → PROPER TURN PREDICTION
+// =====================================================================
+if (wardRoute?.paths?.length > 0) {
 
-  } catch (err) {
-    console.error("checkDeviationAndUpdateStatus() failed:", err);
-    setStatus("Unexpected error in deviation check", "alert");
+  const path = wardRoute.paths[0];
+
+  // Find nearest segment
+  let nearestIndex = 0;
+  let nearestDist = Infinity;
+
+  for (let i = 0; i < path.length - 1; i++) {
+    const d = Math.hypot(path[i][0] - p.longitude, path[i][1] - p.latitude);
+    if (d < nearestDist) {
+      nearestDist = d;
+      nearestIndex = i;
+    }
   }
+
+  const currentSeg = {
+    x1: path[nearestIndex][0],
+    y1: path[nearestIndex][1],
+    x2: path[nearestIndex+1][0],
+    y2: path[nearestIndex+1][1]
+  };
+
+  // If not enough path ahead → no turn
+  if (nearestIndex + 2 >= path.length) {
+    setStatus("Inside ward — on-route navigation running", "ok");
+    return;
+  }
+
+  const nextSeg = {
+    x1: path[nearestIndex+1][0],
+    y1: path[nearestIndex+1][1],
+    x2: path[nearestIndex+2][0],
+    y2: path[nearestIndex+2][1]
+  };
+
+  // Determine left/right/straight
+  const instruction = getTurnInstruction(currentSeg, nextSeg);
+
+  // Compute distance to next segment start
+  const distToTurn = Math.floor(
+    getDistance(
+      p.latitude,
+      p.longitude,
+      currentSeg.y2,
+      currentSeg.x2
+    )
+  );
+
+  // Build message
+  let msg = "";
+  if (distToTurn > 60) {
+    msg = `In ${distToTurn} meters, ${instruction.toLowerCase()}`;
+  } else if (distToTurn > 20) {
+    msg = `Get ready to ${instruction.toLowerCase()}`;
+  } else {
+    msg = `${instruction} now`;
+  }
+
+  // Speak only when instruction changes
+  if (msg !== lastInsideInstruction) {
+    lastInsideInstruction = msg;
+    showInstruction(msg, "ok");
+  }
+
+  setStatus("Inside ward — navigation active", "ok");
+  return;
 }
 
+  } catch (err) {
+    console.error("checkDeviationAndUpdateStatus failed:", err);
+    setStatus("Unexpected error", "alert");
+  }
+}
 
   // Boot
   view.when(() => {
@@ -2732,9 +2952,6 @@ async function checkDeviationAndUpdateStatus() {
 </script>
 </body>
 </html>
-
-
-
 
 
 
